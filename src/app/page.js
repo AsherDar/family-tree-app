@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import ReactFlow, { Background, Controls, Panel, applyNodeChanges, applyEdgeChanges, Handle, Position, ReactFlowProvider, useReactFlow } from 'reactflow';
 import dagre from 'dagre';
 import 'reactflow/dist/style.css';
@@ -178,6 +178,10 @@ function FamilyTreeApp() {
   const [currentUser, setCurrentUser] = useState(null);
   const [isPanelOpen, setIsPanelOpen] = useState(true); 
   
+  // ניהול פתיחה וסגירה של התיקיות בפאנל (אקורדיון)
+  const [openSections, setOpenSections] = useState({ parents: true, spouses: true, children: true, siblings: true });
+  const toggleSection = (sec) => setOpenSections(prev => ({ ...prev, [sec]: !prev[sec] }));
+  
   const [genUp, setGenUp] = useState(1);
   const [genDown, setGenDown] = useState(1);
 
@@ -197,6 +201,7 @@ function FamilyTreeApp() {
   const [authError, setAuthError] = useState('');
 
   const { setCenter, fitView } = useReactFlow(); 
+  const searchInputRef = useRef(null);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -248,16 +253,10 @@ function FamilyTreeApp() {
           const father = sortedData.find(m => m.id === updatedFocal.father_id);
           const mother = sortedData.find(m => m.id === updatedFocal.mother_id);
           setSelectedMember({ ...updatedFocal, father_obj: father, mother_obj: mother });
+          return prevFocalId;
         }
-        return prevFocalId;
-      } else if (sortedData.length > 0) {
-        const firstMember = sortedData[0];
-        const father = sortedData.find(m => m.id === firstMember.father_id);
-        const mother = sortedData.find(m => m.id === firstMember.mother_id);
-        setSelectedMember({ ...firstMember, father_obj: father, mother_obj: mother });
-        return String(firstMember.id);
       }
-      return null;
+      return null; 
     });
   }, []);
 
@@ -304,6 +303,14 @@ function FamilyTreeApp() {
         } else if (spouse && String(spouse.spouse_id) === String(selectedMember.id)) {
           await supabase.from('family_members').update({ spouse_id: null }).eq('id', relativeId);
         }
+      } else if (type === 'sibling') {
+        const sibling = allMembers.find(m => m.id === relativeId);
+        const updateField = {};
+        if (sibling.father_id === selectedMember.father_id) updateField.father_id = null;
+        if (sibling.mother_id === selectedMember.mother_id) updateField.mother_id = null;
+        if (Object.keys(updateField).length > 0) {
+          await supabase.from('family_members').update(updateField).eq('id', relativeId);
+        }
       }
       fetchFamily();
     } catch (err) {
@@ -340,6 +347,14 @@ function FamilyTreeApp() {
         if (modalConfig.type === 'add_child') {
           const isSelectedMale = selectedMember.gender === 'זכר' || selectedMember.gender === 'male';
           const field = isSelectedMale ? { father_id: selectedMember.id } : { mother_id: selectedMember.id };
+          
+          // שיוך אוטומטי להורה השני אם יש רק בן זוג אחד
+          const spouses = allMembers.filter(m => m.spouse_id === selectedMember.id || selectedMember.spouse_id === m.id);
+          if (spouses.length === 1) {
+            if (isSelectedMale) field.mother_id = spouses[0].id;
+            else field.father_id = spouses[0].id;
+          }
+          
           await supabase.from('family_members').update(field).eq('id', selectedExistingId);
         } else if (modalConfig.type === 'add_father') {
           await supabase.from('family_members').update({ father_id: selectedExistingId }).eq('id', selectedMember.id);
@@ -347,6 +362,13 @@ function FamilyTreeApp() {
           await supabase.from('family_members').update({ mother_id: selectedExistingId }).eq('id', selectedMember.id);
         } else if (modalConfig.type === 'add_spouse') {
           await supabase.from('family_members').update({ spouse_id: selectedExistingId }).eq('id', selectedMember.id);
+        } else if (modalConfig.type === 'add_sibling') {
+          const field = {};
+          if (selectedMember.father_id) field.father_id = selectedMember.father_id;
+          if (selectedMember.mother_id) field.mother_id = selectedMember.mother_id;
+          if (Object.keys(field).length > 0) {
+            await supabase.from('family_members').update(field).eq('id', selectedExistingId);
+          }
         }
         setIsModalOpen(false);
         fetchFamily();
@@ -402,8 +424,18 @@ function FamilyTreeApp() {
           const isSelectedMale = selectedMember.gender === 'זכר' || selectedMember.gender === 'male';
           if (isSelectedMale) dataToSave.father_id = selectedMember.id;
           else dataToSave.mother_id = selectedMember.id;
+          
+          // שיוך אוטומטי להורה השני במידה ויש בן זוג יחיד
+          const spouses = allMembers.filter(m => m.spouse_id === selectedMember.id || selectedMember.spouse_id === m.id);
+          if (spouses.length === 1) {
+            if (isSelectedMale) dataToSave.mother_id = spouses[0].id;
+            else dataToSave.father_id = spouses[0].id;
+          }
         } else if (modalConfig.type === 'add_spouse') {
           dataToSave.spouse_id = selectedMember.id;
+        } else if (modalConfig.type === 'add_sibling') {
+          if (selectedMember.father_id) dataToSave.father_id = selectedMember.father_id;
+          if (selectedMember.mother_id) dataToSave.mother_id = selectedMember.mother_id;
         }
 
         const { data: newRow, error: insertErr } = await supabase.from('family_members').insert([dataToSave]).select();
@@ -442,7 +474,11 @@ function FamilyTreeApp() {
   };
 
   useEffect(() => {
-    if (allMembers.length === 0 || !focalMemberId) return;
+    if (allMembers.length === 0 || !focalMemberId) {
+      setNodes([]);
+      setEdges([]);
+      return;
+    }
 
     const visibleMembers = getExtendedFamily(focalMemberId, allMembers, genUp, genDown);
     const visibleIds = new Set(visibleMembers.map(m => String(m.id)));
@@ -508,7 +544,7 @@ function FamilyTreeApp() {
       if (targetNode) {
         setCenter(targetNode.position.x + (targetNode.width / 2), targetNode.position.y + 60, { zoom: 1, duration: 800 });
       }
-    }, 100);
+    }, 400);
 
   }, [allMembers, focalMemberId, genUp, genDown, handleSelectMember, setCenter]);
 
@@ -522,6 +558,17 @@ function FamilyTreeApp() {
 
   const getChildren = () => allMembers.filter(m => m.father_id === selectedMember?.id || m.mother_id === selectedMember?.id);
   const getSpouses = () => allMembers.filter(m => m.spouse_id === selectedMember?.id || selectedMember?.spouse_id === m.id);
+  
+  const getSiblings = () => {
+    if (!selectedMember) return [];
+    const fid = selectedMember.father_id;
+    const mid = selectedMember.mother_id;
+    if (!fid && !mid) return [];
+    return allMembers.filter(m => 
+      m.id !== selectedMember.id && 
+      ((fid && m.father_id === fid) || (mid && m.mother_id === mid))
+    );
+  };
 
   const availableMembers = allMembers
     .filter(m => String(m.id) !== String(selectedMember?.id))
@@ -592,15 +639,22 @@ function FamilyTreeApp() {
                   <div className="flex flex-col"><label className="text-sm font-bold text-gray-600 mb-1">עיסוק</label><input type="text" value={formData.occupation || ''} onChange={e => setFormData({...formData, occupation: e.target.value})} className="border rounded-lg p-2 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-400" /></div>
                   <div className="flex flex-col"><label className="text-sm font-bold text-gray-600 mb-1">תאריך פטירה</label><input type="text" value={formData.death_date || ''} onChange={e => setFormData({...formData, death_date: e.target.value})} className="border rounded-lg p-2 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-400" /></div>
                   
-                  <div className="flex flex-col col-span-2">
-                    <label className="text-sm font-bold text-gray-600 mb-1">תמונת פרופיל</label>
-                    <div className="flex items-center gap-4 bg-gray-50 p-3 rounded-lg border">
-                      <input type="file" accept="image/*" onChange={e => setSelectedImageFile(e.target.files[0])} className="text-sm flex-grow" />
+                  <div className="flex flex-col col-span-2 bg-gray-50 p-4 rounded-xl border border-gray-200">
+                    <label className="text-sm font-bold text-gray-700 mb-2">תמונת פרופיל</label>
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="flex items-center gap-3">
+                        {formData.photo_url ? (
+                          <img src={formData.photo_url} alt="תמונה קיימת" className="w-12 h-12 rounded-full object-cover border-2 border-blue-400 shadow-sm" />
+                        ) : (
+                          <div className="w-12 h-12 rounded-full bg-gray-200 flex items-center justify-center text-xs text-gray-500 font-bold">אין תמונה</div>
+                        )}
+                        <input type="file" accept="image/*" onChange={e => setSelectedImageFile(e.target.files[0])} className="text-sm text-gray-600" />
+                      </div>
                       {formData.photo_url && (
                         <button 
                           type="button" 
-                          onClick={() => { setFormData({ ...formData, photo_url: null }); setSelectedImageFile(null); }} 
-                          className="bg-red-100 text-red-600 font-bold px-3 py-1.5 rounded-lg text-sm hover:bg-red-200 transition-colors"
+                          onClick={() => setFormData({ ...formData, photo_url: null })} 
+                          className="bg-red-500 text-white font-bold px-4 py-2 rounded-lg text-xs hover:bg-red-600 transition-colors shadow-sm"
                         >
                           🗑️ הסר תמונה
                         </button>
@@ -622,7 +676,7 @@ function FamilyTreeApp() {
 
       {selectedMember && (
         <div className="w-80 h-full bg-white shadow-2xl border-l border-gray-200 p-6 flex flex-col z-40 relative overflow-y-auto custom-scrollbar">
-          <button onClick={() => setSelectedMember(null)} className="absolute top-4 left-4 text-gray-400 hover:text-red-500 font-bold text-2xl">&times;</button>
+          <button onClick={() => { setSelectedMember(null); setFocalMemberId(null); }} className="absolute top-4 left-4 text-gray-400 hover:text-red-500 font-bold text-2xl">&times;</button>
           
           <div className="text-center mt-8 mb-6">
             <h2 className="text-2xl font-bold text-gray-800">{selectedMember.first_name} {selectedMember.last_name}</h2>
@@ -636,61 +690,95 @@ function FamilyTreeApp() {
             </div>
           )}
 
-          <div className="space-y-5">
+          <div className="space-y-4">
+            
+            {/* סקשן הורים - אקורדיון */}
             <div className="bg-blue-50 p-3 rounded-lg border border-blue-100">
-              <h3 className="text-xs text-blue-800 font-bold mb-2 uppercase flex justify-between">
-                <span>הורים</span>
+              <h3 className="text-xs text-blue-800 font-bold mb-1 uppercase flex justify-between items-center cursor-pointer select-none" onClick={() => toggleSection('parents')}>
+                <span className="flex items-center gap-1">הורים {openSections.parents ? '▼' : '◀'}</span>
                 {editMode && (
-                  <div className="flex gap-2">
+                  <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
                     {!selectedMember.father_obj && <button onClick={() => openModal('add_father', 'הוספת אב')} className="text-blue-600 hover:text-blue-900 font-black">+ אב</button>}
                     {!selectedMember.mother_obj && <button onClick={() => openModal('add_mother', 'הוספת אם')} className="text-pink-600 hover:text-pink-900 font-black">+ אם</button>}
                   </div>
                 )}
               </h3>
-              <div className="flex flex-col gap-2 mt-1">
-                {selectedMember.father_obj && (
-                  <div className="flex justify-between items-center bg-white p-1.5 rounded border border-blue-200">
-                    <button onClick={() => handleSelectMember(selectedMember.father_obj)} className="text-right text-sm text-blue-700 hover:underline">אב: {selectedMember.father_obj.first_name} {selectedMember.father_obj.last_name}</button>
-                    {editMode && <button onClick={() => handleUnlink('father', selectedMember.father_obj.id)} className="text-red-500 text-xs px-2 hover:text-red-700">✖</button>}
-                  </div>
-                )}
-                {selectedMember.mother_obj && (
-                  <div className="flex justify-between items-center bg-white p-1.5 rounded border border-pink-200">
-                    <button onClick={() => handleSelectMember(selectedMember.mother_obj)} className="text-right text-sm text-pink-700 hover:underline">אם: {selectedMember.mother_obj.first_name} {selectedMember.mother_obj.last_name}</button>
-                    {editMode && <button onClick={() => handleUnlink('mother', selectedMember.mother_obj.id)} className="text-red-500 text-xs px-2 hover:text-red-700">✖</button>}
-                  </div>
-                )}
-              </div>
+              {openSections.parents && (
+                <div className="flex flex-col gap-2 mt-2">
+                  {selectedMember.father_obj && (
+                    <div className="flex justify-between items-center bg-white p-1.5 rounded border border-blue-200">
+                      <button onClick={() => handleSelectMember(selectedMember.father_obj)} className="text-right text-sm text-blue-700 hover:underline">אב: {selectedMember.father_obj.first_name} {selectedMember.father_obj.last_name}</button>
+                      {editMode && <button onClick={() => handleUnlink('father', selectedMember.father_obj.id)} className="text-red-500 text-xs px-2 hover:text-red-700">✖</button>}
+                    </div>
+                  )}
+                  {selectedMember.mother_obj && (
+                    <div className="flex justify-between items-center bg-white p-1.5 rounded border border-pink-200">
+                      <button onClick={() => handleSelectMember(selectedMember.mother_obj)} className="text-right text-sm text-pink-700 hover:underline">אם: {selectedMember.mother_obj.first_name} {selectedMember.mother_obj.last_name}</button>
+                      {editMode && <button onClick={() => handleUnlink('mother', selectedMember.mother_obj.id)} className="text-red-500 text-xs px-2 hover:text-red-700">✖</button>}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
+            {/* סקשן בני זוג - אקורדיון */}
             <div className="bg-purple-50 p-3 rounded-lg border border-purple-100">
-              <h3 className="text-xs text-purple-800 font-bold mb-2 uppercase flex justify-between">
-                <span>בני/בנות זוג</span>
-                {editMode && <button onClick={() => openModal('add_spouse', 'הוספת בן/בת זוג')} className="text-purple-600 hover:text-purple-900 font-black">+</button>}
+              <h3 className="text-xs text-purple-800 font-bold mb-1 uppercase flex justify-between items-center cursor-pointer select-none" onClick={() => toggleSection('spouses')}>
+                <span className="flex items-center gap-1">בני/בנות זוג {openSections.spouses ? '▼' : '◀'}</span>
+                {editMode && (
+                  <button onClick={(e) => { e.stopPropagation(); openModal('add_spouse', 'הוספת בן/בת זוג'); }} className="text-purple-600 hover:text-purple-900 font-black">+</button>
+                )}
               </h3>
-              <div className="flex flex-col gap-2 mt-1">
-                {getSpouses().map(spouse => (
-                  <div key={spouse.id} className="flex justify-between items-center bg-white p-1.5 rounded border border-purple-200">
-                    <button onClick={() => handleSelectMember(spouse)} className="text-right text-sm text-purple-700 hover:underline">{spouse.first_name} {spouse.last_name}</button>
-                    {editMode && <button onClick={() => handleUnlink('spouse', spouse.id)} className="text-red-500 text-xs px-2 hover:text-red-700">✖</button>}
-                  </div>
-                ))}
-              </div>
+              {openSections.spouses && (
+                <div className="flex flex-col gap-2 mt-2">
+                  {getSpouses().map(spouse => (
+                    <div key={spouse.id} className="flex justify-between items-center bg-white p-1.5 rounded border border-purple-200">
+                      <button onClick={() => handleSelectMember(spouse)} className="text-right text-sm text-purple-700 hover:underline">{spouse.first_name} {spouse.last_name}</button>
+                      {editMode && <button onClick={() => handleUnlink('spouse', spouse.id)} className="text-red-500 text-xs px-2 hover:text-red-700">✖</button>}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
+            {/* סקשן ילדים - אקורדיון */}
             <div className="bg-green-50 p-3 rounded-lg border border-green-100">
-              <h3 className="text-xs text-green-800 font-bold mb-2 uppercase flex justify-between">
-                <span>ילדים ({getChildren().length})</span>
-                {editMode && <button onClick={() => openModal('add_child', 'הוספת ילד/ה')} className="text-green-600 hover:text-green-900 font-black">+</button>}
+              <h3 className="text-xs text-green-800 font-bold mb-1 uppercase flex justify-between items-center cursor-pointer select-none" onClick={() => toggleSection('children')}>
+                <span className="flex items-center gap-1">ילדים ({getChildren().length}) {openSections.children ? '▼' : '◀'}</span>
+                {editMode && (
+                  <button onClick={(e) => { e.stopPropagation(); openModal('add_child', 'הוספת ילד/ה'); }} className="text-green-600 hover:text-green-900 font-black">+</button>
+                )}
               </h3>
-              <div className="flex flex-col gap-2 mt-1 max-h-48 overflow-y-auto pr-1 custom-scrollbar">
-                {getChildren().map(child => (
-                  <div key={child.id} className="flex justify-between items-center bg-white p-1.5 rounded border border-green-200">
-                    <button onClick={() => handleSelectMember(child)} className="text-right text-sm text-green-700 hover:underline">{child.first_name} {child.last_name}</button>
-                    {editMode && <button onClick={() => handleUnlink('child', child.id)} className="text-red-500 text-xs px-2 hover:text-red-700">✖</button>}
-                  </div>
-                ))}
-              </div>
+              {openSections.children && (
+                <div className="flex flex-col gap-2 mt-2 max-h-40 overflow-y-auto pr-1 custom-scrollbar">
+                  {getChildren().map(child => (
+                    <div key={child.id} className="flex justify-between items-center bg-white p-1.5 rounded border border-green-200">
+                      <button onClick={() => handleSelectMember(child)} className="text-right text-sm text-green-700 hover:underline">{child.first_name} {child.last_name}</button>
+                      {editMode && <button onClick={() => handleUnlink('child', child.id)} className="text-red-500 text-xs px-2 hover:text-red-700">✖</button>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* סקשן אחים - אקורדיון חדש */}
+            <div className="bg-orange-50 p-3 rounded-lg border border-orange-100">
+              <h3 className="text-xs text-orange-800 font-bold mb-1 uppercase flex justify-between items-center cursor-pointer select-none" onClick={() => toggleSection('siblings')}>
+                <span className="flex items-center gap-1">אחים ואחיות ({getSiblings().length}) {openSections.siblings ? '▼' : '◀'}</span>
+                {editMode && (selectedMember.father_id || selectedMember.mother_id) && (
+                  <button onClick={(e) => { e.stopPropagation(); openModal('add_sibling', 'הוספת אח/ות'); }} className="text-orange-600 hover:text-orange-900 font-black">+</button>
+                )}
+              </h3>
+              {openSections.siblings && (
+                <div className="flex flex-col gap-2 mt-2 max-h-40 overflow-y-auto pr-1 custom-scrollbar">
+                  {getSiblings().map(sibling => (
+                    <div key={sibling.id} className="flex justify-between items-center bg-white p-1.5 rounded border border-orange-200">
+                      <button onClick={() => handleSelectMember(sibling)} className="text-right text-sm text-orange-700 hover:underline">{sibling.first_name} {sibling.last_name}</button>
+                      {editMode && <button onClick={() => handleUnlink('sibling', sibling.id)} className="text-red-500 text-xs px-2 hover:text-red-700">✖</button>}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <hr className="border-gray-200" />
@@ -721,7 +809,15 @@ function FamilyTreeApp() {
               <div className="bg-white/95 p-4 rounded-xl shadow-lg border border-gray-200 flex flex-col gap-3 w-64">
                 
                 <div className="relative mb-2">
-                  <input type="text" placeholder="🔍 חפש בעץ המשפחה..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full border border-gray-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-400 bg-gray-50 text-right" dir="rtl" />
+                  <input 
+                    ref={searchInputRef}
+                    type="text" 
+                    placeholder="חיפוש דמות..." 
+                    value={searchQuery} 
+                    onChange={(e) => setSearchQuery(e.target.value)} 
+                    className="w-full border border-gray-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-400 bg-gray-50 text-right" 
+                    dir="rtl" 
+                  />
                   {searchResults.length > 0 && (
                     <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-xl max-h-60 overflow-y-auto z-[100] custom-scrollbar" dir="rtl">
                       {searchResults.map(result => {
@@ -751,6 +847,15 @@ function FamilyTreeApp() {
                   </button>
                 )}
 
+                {editMode && (
+                  <>
+                    <hr className="border-gray-200" />
+                    <button onClick={() => openModal('add_new', '✨ הוספת דמות חדשה')} className="px-4 py-2 rounded-lg text-sm font-bold bg-green-500 text-white transition-colors hover:bg-green-600 flex items-center justify-center gap-2">
+                      ➕ צור דמות חדשה
+                    </button>
+                  </>
+                )}
+
                 <hr className="border-gray-200" />
                 <button onClick={() => setIsDraggable(!isDraggable)} className={`px-4 py-2 rounded-lg text-sm font-bold text-white transition-colors flex items-center justify-center gap-2 ${isDraggable ? 'bg-red-500 hover:bg-red-600' : 'bg-green-500 hover:bg-green-600'}`}>
                   {isDraggable ? '🔒 נעל תצוגה' : '🔓 אפשר תזוזה'}
@@ -771,6 +876,22 @@ function FamilyTreeApp() {
               </div>
             )}
           </Panel>
+
+          {nodes.length === 0 && (
+            <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
+              <button 
+                onClick={() => {
+                  setIsPanelOpen(true);
+                  setTimeout(() => searchInputRef.current?.focus(), 100);
+                }}
+                className="pointer-events-auto flex items-center gap-3 bg-white/70 px-8 py-5 rounded-full shadow-md backdrop-blur-sm border border-gray-200 hover:border-blue-400 hover:scale-105 hover:shadow-lg transition-all cursor-pointer"
+                dir="rtl"
+              >
+                <span className="text-3xl text-gray-600">🔍</span>
+                <span className="text-2xl md:text-3xl font-bold text-gray-600">חפש דמות כדי להתחיל...</span>
+              </button>
+            </div>
+          )}
 
           <Background color="#f3f4f6" gap={20} size={1} />
           <Controls />
