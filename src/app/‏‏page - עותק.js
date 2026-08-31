@@ -140,9 +140,9 @@ function FamilyTreeApp() {
   const [isDraggable, setIsDraggable] = useState(false); 
   
   const [editMode, setEditMode] = useState(false);
-  const [currentUser, setCurrentUser] = useState(null);
-  const [isPanelOpen, setIsPanelOpen] = useState(true); 
+  const [isPanelOpen, setIsPanelOpen] = useState(true); // מצב חדש לקיפול פאנל השליטה
   
+  // ברירת מחדל שונתה ל-1 ו-1
   const [genUp, setGenUp] = useState(1);
   const [genDown, setGenDown] = useState(1);
 
@@ -155,49 +155,7 @@ function FamilyTreeApp() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
 
-  // משתני מצב להתחברות
-  const [isLoginOpen, setIsLoginOpen] = useState(false);
-  const [authEmail, setAuthEmail] = useState('');
-  const [authPassword, setAuthPassword] = useState('');
-  const [authError, setAuthError] = useState('');
-
   const { setCenter, fitView } = useReactFlow(); 
-
-  // בדיקת מצב התחברות בטעינת העמוד
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setCurrentUser(session?.user ?? null);
-      setEditMode(!!session?.user);
-    });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setCurrentUser(session?.user ?? null);
-      setEditMode(!!session?.user);
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
-
-  const handleLogin = async (e) => {
-    e.preventDefault();
-    setAuthError('');
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email: authEmail,
-      password: authPassword,
-    });
-    
-    if (error) {
-      setAuthError('אימייל או סיסמה שגויים. נסה שוב.');
-    } else {
-      setIsLoginOpen(false);
-      setAuthEmail('');
-      setAuthPassword('');
-    }
-  };
-
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-  };
 
   const fetchFamily = useCallback(async () => {
     const { data, error } = await supabase.from('family_members').select('*');
@@ -321,28 +279,12 @@ function FamilyTreeApp() {
       const dataToSave = { ...formData };
       
       if (modalConfig.type === 'edit') {
-        const { data: currentRecord, error: checkErr } = await supabase
-          .from('family_members')
-          .select('last_updated')
-          .eq('id', formData.id)
-          .single();
-
-        if (checkErr) throw checkErr;
-
-        if (currentRecord.last_updated && formData.last_updated && currentRecord.last_updated !== formData.last_updated) {
-          alert("⚠️ שגיאה: משתמש אחר עדכן דמות זו בזמן שערכת אותה. העמוד ירוענן כעת כדי שתוכל לראות את השינויים ולמנוע דריסת מידע.");
-          setIsModalOpen(false);
-          fetchFamily();
-          return;
-        }
-
         const { error } = await supabase.from('family_members').update(dataToSave).eq('id', formData.id);
         if (error) throw error;
       } else {
         delete dataToSave.id; 
         delete dataToSave.father_obj; 
         delete dataToSave.mother_obj;
-        delete dataToSave.last_updated; 
 
         if (modalConfig.type === 'add_child') {
           const isSelectedMale = selectedMember.gender === 'זכר' || selectedMember.gender === 'male';
@@ -373,7 +315,7 @@ function FamilyTreeApp() {
   const handleDelete = async () => {
     const childrenCount = allMembers.filter(m => m.father_id === selectedMember.id || m.mother_id === selectedMember.id).length;
     const spousesCount = allMembers.filter(m => m.spouse_id === selectedMember.id || selectedMember.spouse_id === m.id).length;
-    const confirmMsg = `האם ברצונך למחוק את ${selectedMember.first_name} ${selectedMember.last_name} לחלוטין?\n\nלאדם זה מקושרים:\n- ${childrenCount} ילדים\n- ${spousesCount} בני/בנות זוג\n\nהמחיקה תעלים אותו.`;
+    const confirmMsg = `האם ברצונך למחוק את ${selectedMember.first_name} ${selectedMember.last_name} לחלוטין?\n\nלאדם זה מקושרים:\n- ${childrenCount} ילדים\n- ${spousesCount} בני/בנות זוג\n\nהמחיקה תעלים אותו. (אם ברצונך רק לנתק אותו, השתמש בכפתור הניתוק ✖ ליד שמו בפאנל של קרוביו).`;
     
     if (window.confirm(confirmMsg)) {
       const { error } = await supabase.from('family_members').update({ is_deleted: true }).eq('id', selectedMember.id);
@@ -476,36 +418,15 @@ function FamilyTreeApp() {
   return (
     <div className="w-screen h-screen bg-gray-50 flex" dir="rtl">
       
-      {/* מודאל התחברות למערכת */}
-      {isLoginOpen && (
-        <div className="fixed inset-0 bg-black/60 z-[200] flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 relative">
-            <button onClick={() => setIsLoginOpen(false)} className="absolute top-4 left-4 text-gray-500 hover:text-red-500 text-2xl font-bold">&times;</button>
-            <h2 className="text-xl font-bold text-gray-800 mb-4 text-center">התחברות למצב עריכה</h2>
-            <form onSubmit={handleLogin} className="flex flex-col gap-4">
-              {authError && <div className="bg-red-50 text-red-600 p-2 rounded text-sm text-center">{authError}</div>}
-              <div>
-                <label className="text-sm font-bold text-gray-600 mb-1 block">אימייל</label>
-                <input required type="email" value={authEmail} onChange={e => setAuthEmail(e.target.value)} className="w-full border rounded-lg p-2 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-400 text-left" dir="ltr" />
-              </div>
-              <div>
-                <label className="text-sm font-bold text-gray-600 mb-1 block">סיסמה</label>
-                <input required type="password" value={authPassword} onChange={e => setAuthPassword(e.target.value)} className="w-full border rounded-lg p-2 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-400 text-left" dir="ltr" />
-              </div>
-              <button type="submit" className="w-full bg-blue-600 text-white font-bold py-2 rounded-lg hover:bg-blue-700 mt-2">התחבר</button>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* מודאל הוספה / עריכה */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col relative overflow-hidden">
+            
             <div className="bg-gray-100 p-4 flex justify-between items-center border-b">
               <h2 className="text-xl font-bold text-gray-800">{modalConfig.title}</h2>
               <button onClick={() => setIsModalOpen(false)} className="text-gray-500 hover:text-red-500 text-2xl font-bold leading-none">&times;</button>
             </div>
+
             {modalConfig.type !== 'edit' && (
               <div className="flex bg-gray-50 border-b">
                 <button onClick={() => setModalTab('new')} className={`flex-1 py-3 font-bold text-sm ${modalTab === 'new' ? 'text-blue-600 border-b-2 border-blue-600 bg-white' : 'text-gray-500 hover:bg-gray-100'}`}>
@@ -516,33 +437,81 @@ function FamilyTreeApp() {
                 </button>
               </div>
             )}
+            
             <form onSubmit={handleSaveForm} className="p-6 overflow-y-auto">
+              
               {modalTab === 'existing' && modalConfig.type !== 'edit' ? (
                 <div className="py-8 text-center">
                   <label className="block text-gray-700 font-bold mb-4">בחר אדם מתוך הרשימה:</label>
-                  <select value={selectedExistingId} onChange={e => setSelectedExistingId(e.target.value)} className="w-full max-w-md border border-gray-300 rounded-lg p-3 bg-white focus:ring-2 focus:ring-blue-400" required={modalTab === 'existing'}>
+                  <select 
+                    value={selectedExistingId} 
+                    onChange={e => setSelectedExistingId(e.target.value)} 
+                    className="w-full max-w-md border border-gray-300 rounded-lg p-3 bg-white focus:ring-2 focus:ring-blue-400"
+                    required={modalTab === 'existing'}
+                  >
                     <option value="">-- בחר דמות מהמערכת --</option>
                     {availableMembers.map(m => {
+                      // אלגוריתם חדש למציאת שמות ההורים עבור הרשימה
                       const father = allMembers.find(f => f.id === m.father_id);
                       const mother = allMembers.find(mo => mo.id === m.mother_id);
-                      const parentsStr = [father ? father.first_name : '', mother ? mother.first_name : ''].filter(Boolean).join(' ו');
-                      return <option key={m.id} value={m.id}>{m.first_name} {m.last_name}{parentsStr ? ` (בן/בת של: ${parentsStr})` : ''}</option>;
+                      const fatherName = father ? father.first_name : '';
+                      const motherName = mother ? mother.first_name : '';
+                      const parentsStr = [fatherName, motherName].filter(Boolean).join(' ו');
+                      const parentDisplay = parentsStr ? ` (בן/בת של: ${parentsStr})` : '';
+
+                      return (
+                        <option key={m.id} value={m.id}>
+                          {m.first_name} {m.last_name}{parentDisplay}
+                        </option>
+                      );
                     })}
                   </select>
                 </div>
               ) : (
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="flex flex-col"><label className="text-sm font-bold text-gray-600 mb-1">שם פרטי *</label><input required type="text" value={formData.first_name || ''} onChange={e => setFormData({...formData, first_name: e.target.value})} className="border rounded-lg p-2 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-400" /></div>
-                  <div className="flex flex-col"><label className="text-sm font-bold text-gray-600 mb-1">שם משפחה *</label><input required type="text" value={formData.last_name || ''} onChange={e => setFormData({...formData, last_name: e.target.value})} className="border rounded-lg p-2 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-400" /></div>
-                  <div className="flex flex-col"><label className="text-sm font-bold text-gray-600 mb-1">מגדר</label><select value={formData.gender || 'זכר'} onChange={e => setFormData({...formData, gender: e.target.value})} className="border rounded-lg p-2 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-400"><option value="זכר">זכר</option><option value="נקבה">נקבה</option></select></div>
-                  <div className="flex flex-col"><label className="text-sm font-bold text-gray-600 mb-1">תאריך לידה</label><input type="text" placeholder="למשל: 1980" value={formData.birth_date || ''} onChange={e => setFormData({...formData, birth_date: e.target.value})} className="border rounded-lg p-2 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-400" /></div>
-                  <div className="flex flex-col"><label className="text-sm font-bold text-gray-600 mb-1">מקום לידה</label><input type="text" value={formData.birth_place || ''} onChange={e => setFormData({...formData, birth_place: e.target.value})} className="border rounded-lg p-2 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-400" /></div>
-                  <div className="flex flex-col"><label className="text-sm font-bold text-gray-600 mb-1">עיסוק</label><input type="text" value={formData.occupation || ''} onChange={e => setFormData({...formData, occupation: e.target.value})} className="border rounded-lg p-2 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-400" /></div>
-                  <div className="flex flex-col"><label className="text-sm font-bold text-gray-600 mb-1">תאריך פטירה</label><input type="text" value={formData.death_date || ''} onChange={e => setFormData({...formData, death_date: e.target.value})} className="border rounded-lg p-2 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-400" /></div>
-                  <div className="flex flex-col"><label className="text-sm font-bold text-gray-600 mb-1">קישור לתמונה (URL)</label><input type="text" dir="ltr" value={formData.photo_url || ''} onChange={e => setFormData({...formData, photo_url: e.target.value})} className="border rounded-lg p-2 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-400" /></div>
-                  <div className="flex flex-col col-span-2"><label className="text-sm font-bold text-gray-600 mb-1">סיפור חיים</label><textarea rows="3" value={formData.life_story || ''} onChange={e => setFormData({...formData, life_story: e.target.value})} className="border rounded-lg p-2 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-400 custom-scrollbar" /></div>
+                  <div className="flex flex-col">
+                    <label className="text-sm font-bold text-gray-600 mb-1">שם פרטי *</label>
+                    <input required type="text" value={formData.first_name || ''} onChange={e => setFormData({...formData, first_name: e.target.value})} className="border rounded-lg p-2 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-400" />
+                  </div>
+                  <div className="flex flex-col">
+                    <label className="text-sm font-bold text-gray-600 mb-1">שם משפחה *</label>
+                    <input required type="text" value={formData.last_name || ''} onChange={e => setFormData({...formData, last_name: e.target.value})} className="border rounded-lg p-2 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-400" />
+                  </div>
+                  <div className="flex flex-col">
+                    <label className="text-sm font-bold text-gray-600 mb-1">מגדר</label>
+                    <select value={formData.gender || 'זכר'} onChange={e => setFormData({...formData, gender: e.target.value})} className="border rounded-lg p-2 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-400">
+                      <option value="זכר">זכר</option>
+                      <option value="נקבה">נקבה</option>
+                    </select>
+                  </div>
+                  <div className="flex flex-col">
+                    <label className="text-sm font-bold text-gray-600 mb-1">תאריך לידה</label>
+                    <input type="text" placeholder="למשל: 1980" value={formData.birth_date || ''} onChange={e => setFormData({...formData, birth_date: e.target.value})} className="border rounded-lg p-2 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-400" />
+                  </div>
+                  <div className="flex flex-col">
+                    <label className="text-sm font-bold text-gray-600 mb-1">מקום לידה</label>
+                    <input type="text" value={formData.birth_place || ''} onChange={e => setFormData({...formData, birth_place: e.target.value})} className="border rounded-lg p-2 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-400" />
+                  </div>
+                  <div className="flex flex-col">
+                    <label className="text-sm font-bold text-gray-600 mb-1">עיסוק</label>
+                    <input type="text" value={formData.occupation || ''} onChange={e => setFormData({...formData, occupation: e.target.value})} className="border rounded-lg p-2 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-400" />
+                  </div>
+                  <div className="flex flex-col">
+                    <label className="text-sm font-bold text-gray-600 mb-1">תאריך פטירה</label>
+                    <input type="text" value={formData.death_date || ''} onChange={e => setFormData({...formData, death_date: e.target.value})} className="border rounded-lg p-2 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-400" />
+                  </div>
+                  <div className="flex flex-col">
+                    <label className="text-sm font-bold text-gray-600 mb-1">קישור לתמונה (URL)</label>
+                    <input type="text" dir="ltr" value={formData.photo_url || ''} onChange={e => setFormData({...formData, photo_url: e.target.value})} className="border rounded-lg p-2 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-400" />
+                  </div>
+                  
+                  <div className="flex flex-col col-span-2">
+                    <label className="text-sm font-bold text-gray-600 mb-1">סיפור חיים</label>
+                    <textarea rows="3" value={formData.life_story || ''} onChange={e => setFormData({...formData, life_story: e.target.value})} className="border rounded-lg p-2 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-400 custom-scrollbar" />
+                  </div>
                 </div>
               )}
+
               <div className="col-span-2 flex justify-end gap-3 mt-6 pt-4 border-t">
                 <button type="button" onClick={() => setIsModalOpen(false)} className="px-5 py-2 bg-gray-200 text-gray-700 font-bold rounded-lg hover:bg-gray-300">ביטול</button>
                 <button type="submit" className="px-5 py-2 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700">שמור פרטים</button>
@@ -552,7 +521,6 @@ function FamilyTreeApp() {
         </div>
       )}
 
-      {/* פאנל פרטי הדמות השמאלי */}
       {selectedMember && (
         <div className="w-80 h-full bg-white shadow-2xl border-l border-gray-200 p-6 flex flex-col z-40 relative overflow-y-auto custom-scrollbar">
           <button onClick={() => setSelectedMember(null)} className="absolute top-4 left-4 text-gray-400 hover:text-red-500 font-bold text-2xl">&times;</button>
@@ -564,8 +532,12 @@ function FamilyTreeApp() {
 
           {editMode && (
             <div className="mb-6 flex gap-2 justify-center border-b border-gray-100 pb-4">
-              <button onClick={() => openModal('edit', 'עריכת פרטים', selectedMember)} className="bg-blue-100 hover:bg-blue-200 text-blue-700 text-sm font-bold py-1 px-3 rounded">✏️ ערוך פרטים</button>
-              <button onClick={handleDelete} className="bg-red-100 hover:bg-red-200 text-red-700 text-sm font-bold py-1 px-3 rounded">🗑️ מחק דמות</button>
+              <button onClick={() => openModal('edit', 'עריכת פרטים', selectedMember)} className="bg-blue-100 hover:bg-blue-200 text-blue-700 text-sm font-bold py-1 px-3 rounded">
+                ✏️ ערוך פרטים
+              </button>
+              <button onClick={handleDelete} className="bg-red-100 hover:bg-red-200 text-red-700 text-sm font-bold py-1 px-3 rounded">
+                🗑️ מחק דמות
+              </button>
             </div>
           )}
 
@@ -583,14 +555,18 @@ function FamilyTreeApp() {
               <div className="flex flex-col gap-2 mt-1">
                 {selectedMember.father_obj && (
                   <div className="flex justify-between items-center bg-white p-1.5 rounded border border-blue-200">
-                    <button onClick={() => handleSelectMember(selectedMember.father_obj)} className="text-right text-sm text-blue-700 hover:underline">אב: {selectedMember.father_obj.first_name} {selectedMember.father_obj.last_name}</button>
-                    {editMode && <button onClick={() => handleUnlink('father', selectedMember.father_obj.id)} className="text-red-500 text-xs px-2 hover:text-red-700">✖</button>}
+                    <button onClick={() => handleSelectMember(selectedMember.father_obj)} className="text-right text-sm text-blue-700 hover:underline">
+                      אב: {selectedMember.father_obj.first_name} {selectedMember.father_obj.last_name}
+                    </button>
+                    {editMode && <button onClick={() => handleUnlink('father', selectedMember.father_obj.id)} className="text-red-500 text-xs px-2 hover:text-red-700" title="נתק קשר">✖</button>}
                   </div>
                 )}
                 {selectedMember.mother_obj && (
                   <div className="flex justify-between items-center bg-white p-1.5 rounded border border-pink-200">
-                    <button onClick={() => handleSelectMember(selectedMember.mother_obj)} className="text-right text-sm text-pink-700 hover:underline">אם: {selectedMember.mother_obj.first_name} {selectedMember.mother_obj.last_name}</button>
-                    {editMode && <button onClick={() => handleUnlink('mother', selectedMember.mother_obj.id)} className="text-red-500 text-xs px-2 hover:text-red-700">✖</button>}
+                    <button onClick={() => handleSelectMember(selectedMember.mother_obj)} className="text-right text-sm text-pink-700 hover:underline">
+                      אם: {selectedMember.mother_obj.first_name} {selectedMember.mother_obj.last_name}
+                    </button>
+                    {editMode && <button onClick={() => handleUnlink('mother', selectedMember.mother_obj.id)} className="text-red-500 text-xs px-2 hover:text-red-700" title="נתק קשר">✖</button>}
                   </div>
                 )}
               </div>
@@ -604,8 +580,10 @@ function FamilyTreeApp() {
               <div className="flex flex-col gap-2 mt-1">
                 {getSpouses().map(spouse => (
                   <div key={spouse.id} className="flex justify-between items-center bg-white p-1.5 rounded border border-purple-200">
-                    <button onClick={() => handleSelectMember(spouse)} className="text-right text-sm text-purple-700 hover:underline">{spouse.first_name} {spouse.last_name}</button>
-                    {editMode && <button onClick={() => handleUnlink('spouse', spouse.id)} className="text-red-500 text-xs px-2 hover:text-red-700">✖</button>}
+                    <button onClick={() => handleSelectMember(spouse)} className="text-right text-sm text-purple-700 hover:underline">
+                      {spouse.first_name} {spouse.last_name}
+                    </button>
+                    {editMode && <button onClick={() => handleUnlink('spouse', spouse.id)} className="text-red-500 text-xs px-2 hover:text-red-700" title="נתק קשר">✖</button>}
                   </div>
                 ))}
               </div>
@@ -619,8 +597,10 @@ function FamilyTreeApp() {
               <div className="flex flex-col gap-2 mt-1 max-h-48 overflow-y-auto pr-1 custom-scrollbar">
                 {getChildren().map(child => (
                   <div key={child.id} className="flex justify-between items-center bg-white p-1.5 rounded border border-green-200">
-                    <button onClick={() => handleSelectMember(child)} className="text-right text-sm text-green-700 hover:underline">{child.first_name} {child.last_name}</button>
-                    {editMode && <button onClick={() => handleUnlink('child', child.id)} className="text-red-500 text-xs px-2 hover:text-red-700">✖</button>}
+                    <button onClick={() => handleSelectMember(child)} className="text-right text-sm text-green-700 hover:underline">
+                      {child.first_name} {child.last_name}
+                    </button>
+                    {editMode && <button onClick={() => handleUnlink('child', child.id)} className="text-red-500 text-xs px-2 hover:text-red-700" title="נתק קשר">✖</button>}
                   </div>
                 ))}
               </div>
@@ -645,8 +625,12 @@ function FamilyTreeApp() {
         <ReactFlow 
           nodes={nodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} nodeTypes={nodeTypes} nodesDraggable={isDraggable}
         >
+          {/* פאנל השליטה עם כפתור הקיפול */}
           <Panel position="top-right" className="z-30 m-4 flex flex-col gap-2">
-            <button onClick={() => setIsPanelOpen(!isPanelOpen)} className="bg-white/95 p-3 rounded-xl shadow-lg border border-gray-200 text-sm font-bold text-gray-700 hover:bg-gray-50 flex justify-between items-center w-64">
+            <button 
+              onClick={() => setIsPanelOpen(!isPanelOpen)} 
+              className="bg-white/95 p-3 rounded-xl shadow-lg border border-gray-200 text-sm font-bold text-gray-700 hover:bg-gray-50 flex justify-between items-center w-64"
+            >
               <span>{isPanelOpen ? '🔽 סגור תפריט כלים' : '⚙️ פתח תפריט כלים וחיפוש'}</span>
             </button>
             
@@ -654,15 +638,33 @@ function FamilyTreeApp() {
               <div className="bg-white/95 p-4 rounded-xl shadow-lg border border-gray-200 flex flex-col gap-3 w-64">
                 
                 <div className="relative mb-2">
-                  <input type="text" placeholder="🔍 חפש בעץ המשפחה..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full border border-gray-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-400 bg-gray-50 text-right" dir="rtl" />
+                  <input 
+                    type="text" 
+                    placeholder="🔍 חפש בעץ המשפחה..." 
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-400 bg-gray-50 text-right"
+                    dir="rtl"
+                  />
                   {searchResults.length > 0 && (
                     <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-xl max-h-60 overflow-y-auto z-[100] custom-scrollbar" dir="rtl">
                       {searchResults.map(result => {
                         const father = allMembers.find(m => m.id === result.father_id);
                         const mother = allMembers.find(m => m.id === result.mother_id);
-                        const parentsStr = [father ? father.first_name : '', mother ? mother.first_name : ''].filter(Boolean).join(' ו');
+                        const fatherName = father ? `${father.first_name}` : '';
+                        const motherName = mother ? `${mother.first_name}` : '';
+                        const parentsStr = [fatherName, motherName].filter(Boolean).join(' ו');
+                        
                         return (
-                          <div key={result.id} className="p-3 border-b hover:bg-blue-50 cursor-pointer text-right transition-colors" onClick={() => { handleSelectMember(result, allMembers); setSearchQuery(''); setSearchResults([]); }}>
+                          <div 
+                            key={result.id} 
+                            className="p-3 border-b last:border-b-0 hover:bg-blue-50 cursor-pointer text-right transition-colors"
+                            onClick={() => {
+                              handleSelectMember(result, allMembers);
+                              setSearchQuery('');
+                              setSearchResults([]);
+                            }}
+                          >
                             <div className="font-bold text-sm text-gray-800">{result.first_name} {result.last_name}</div>
                             {parentsStr && <div className="text-xs text-gray-500 mt-1">בן/בת של: {parentsStr}</div>}
                           </div>
@@ -674,17 +676,9 @@ function FamilyTreeApp() {
                 
                 <hr className="border-gray-200" />
                 
-                {/* כפתור התחברות דינמי שמוצג לפי הסטטוס מול השרת */}
-                {currentUser ? (
-                  <button onClick={handleLogout} className="px-4 py-2 rounded-lg text-sm font-bold bg-indigo-500 text-white transition-colors hover:bg-indigo-600 flex items-center justify-center gap-2">
-                    🚪 התנתק ממצב עריכה
-                  </button>
-                ) : (
-                  <button onClick={() => setIsLoginOpen(true)} className="px-4 py-2 rounded-lg text-sm font-bold bg-gray-200 text-gray-700 transition-colors hover:bg-gray-300 flex items-center justify-center gap-2">
-                    🔐 כנס למצב עריכה
-                  </button>
-                )}
-
+                <button onClick={() => setEditMode(!editMode)} className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${editMode ? 'bg-indigo-500 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}>
+                  {editMode ? 'צא ממצב עריכה' : '🔐 כנס למצב עריכה'}
+                </button>
                 <hr className="border-gray-200" />
                 <button onClick={() => setIsDraggable(!isDraggable)} className={`px-4 py-2 rounded-lg text-sm font-bold text-white transition-colors flex items-center justify-center gap-2 ${isDraggable ? 'bg-red-500 hover:bg-red-600' : 'bg-green-500 hover:bg-green-600'}`}>
                   {isDraggable ? '🔒 נעל תצוגה' : '🔓 אפשר תזוזה'}
