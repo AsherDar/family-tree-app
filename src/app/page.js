@@ -178,7 +178,6 @@ function FamilyTreeApp() {
   const [currentUser, setCurrentUser] = useState(null);
   const [isPanelOpen, setIsPanelOpen] = useState(true); 
   
-  // ניהול פתיחה וסגירה של התיקיות בפאנל (אקורדיון)
   const [openSections, setOpenSections] = useState({ parents: true, spouses: true, children: true, siblings: true });
   const toggleSection = (sec) => setOpenSections(prev => ({ ...prev, [sec]: !prev[sec] }));
   
@@ -341,6 +340,8 @@ function FamilyTreeApp() {
   const handleSaveForm = async (e) => {
     e.preventDefault();
     try {
+      let addedSpouseId = null;
+
       if (modalTab === 'existing' && modalConfig.type !== 'edit') {
         if (!selectedExistingId) { alert("יש לבחור אדם מהרשימה"); return; }
         
@@ -348,7 +349,6 @@ function FamilyTreeApp() {
           const isSelectedMale = selectedMember.gender === 'זכר' || selectedMember.gender === 'male';
           const field = isSelectedMale ? { father_id: selectedMember.id } : { mother_id: selectedMember.id };
           
-          // שיוך אוטומטי להורה השני אם יש רק בן זוג אחד
           const spouses = allMembers.filter(m => m.spouse_id === selectedMember.id || selectedMember.spouse_id === m.id);
           if (spouses.length === 1) {
             if (isSelectedMale) field.mother_id = spouses[0].id;
@@ -362,6 +362,7 @@ function FamilyTreeApp() {
           await supabase.from('family_members').update({ mother_id: selectedExistingId }).eq('id', selectedMember.id);
         } else if (modalConfig.type === 'add_spouse') {
           await supabase.from('family_members').update({ spouse_id: selectedExistingId }).eq('id', selectedMember.id);
+          addedSpouseId = selectedExistingId;
         } else if (modalConfig.type === 'add_sibling') {
           const field = {};
           if (selectedMember.father_id) field.father_id = selectedMember.father_id;
@@ -370,6 +371,26 @@ function FamilyTreeApp() {
             await supabase.from('family_members').update(field).eq('id', selectedExistingId);
           }
         }
+
+        // מנגנון חיבור אוטומטי חכם במקרה של בת/בן זוג קיימים
+        if (modalConfig.type === 'add_spouse' && addedSpouseId) {
+          const isSelectedMale = selectedMember.gender === 'זכר' || selectedMember.gender === 'male';
+          const missingParentField = isSelectedMale ? 'mother_id' : 'father_id';
+          const childrenWithoutParent = allMembers.filter(m => 
+            (m.father_id === selectedMember.id || m.mother_id === selectedMember.id) && !m[missingParentField]
+          );
+
+          if (childrenWithoutParent.length > 0) {
+            if (window.confirm(`לדמות זו יש ${childrenWithoutParent.length} ילדים במערכת.\nהאם לקשר אותם אוטומטית לבן/בת הזוג שבחרת?`)) {
+              for (const child of childrenWithoutParent) {
+                const updateData = {};
+                updateData[missingParentField] = addedSpouseId;
+                await supabase.from('family_members').update(updateData).eq('id', child.id);
+              }
+            }
+          }
+        }
+
         setIsModalOpen(false);
         fetchFamily();
         return;
@@ -425,7 +446,6 @@ function FamilyTreeApp() {
           if (isSelectedMale) dataToSave.father_id = selectedMember.id;
           else dataToSave.mother_id = selectedMember.id;
           
-          // שיוך אוטומטי להורה השני במידה ויש בן זוג יחיד
           const spouses = allMembers.filter(m => m.spouse_id === selectedMember.id || selectedMember.spouse_id === m.id);
           if (spouses.length === 1) {
             if (isSelectedMale) dataToSave.mother_id = spouses[0].id;
@@ -446,6 +466,27 @@ function FamilyTreeApp() {
           await supabase.from('family_members').update({ father_id: insertedId }).eq('id', selectedMember.id);
         } else if (modalConfig.type === 'add_mother') {
           await supabase.from('family_members').update({ mother_id: insertedId }).eq('id', selectedMember.id);
+        } else if (modalConfig.type === 'add_spouse') {
+          addedSpouseId = insertedId;
+        }
+
+        // מנגנון חיבור אוטומטי חכם במקרה של בת/בן זוג חדשים
+        if (modalConfig.type === 'add_spouse' && addedSpouseId) {
+          const isSelectedMale = selectedMember.gender === 'זכר' || selectedMember.gender === 'male';
+          const missingParentField = isSelectedMale ? 'mother_id' : 'father_id';
+          const childrenWithoutParent = allMembers.filter(m => 
+            (m.father_id === selectedMember.id || m.mother_id === selectedMember.id) && !m[missingParentField]
+          );
+
+          if (childrenWithoutParent.length > 0) {
+            if (window.confirm(`לדמות זו יש ${childrenWithoutParent.length} ילדים במערכת.\nהאם לקשר אותם אוטומטית לבן/בת הזוג שהוספת כעת?`)) {
+              for (const child of childrenWithoutParent) {
+                const updateData = {};
+                updateData[missingParentField] = addedSpouseId;
+                await supabase.from('family_members').update(updateData).eq('id', child.id);
+              }
+            }
+          }
         }
       }
       
@@ -692,7 +733,6 @@ function FamilyTreeApp() {
 
           <div className="space-y-4">
             
-            {/* סקשן הורים - אקורדיון */}
             <div className="bg-blue-50 p-3 rounded-lg border border-blue-100">
               <h3 className="text-xs text-blue-800 font-bold mb-1 uppercase flex justify-between items-center cursor-pointer select-none" onClick={() => toggleSection('parents')}>
                 <span className="flex items-center gap-1">הורים {openSections.parents ? '▼' : '◀'}</span>
@@ -721,7 +761,6 @@ function FamilyTreeApp() {
               )}
             </div>
 
-            {/* סקשן בני זוג - אקורדיון */}
             <div className="bg-purple-50 p-3 rounded-lg border border-purple-100">
               <h3 className="text-xs text-purple-800 font-bold mb-1 uppercase flex justify-between items-center cursor-pointer select-none" onClick={() => toggleSection('spouses')}>
                 <span className="flex items-center gap-1">בני/בנות זוג {openSections.spouses ? '▼' : '◀'}</span>
@@ -741,7 +780,6 @@ function FamilyTreeApp() {
               )}
             </div>
 
-            {/* סקשן ילדים - אקורדיון */}
             <div className="bg-green-50 p-3 rounded-lg border border-green-100">
               <h3 className="text-xs text-green-800 font-bold mb-1 uppercase flex justify-between items-center cursor-pointer select-none" onClick={() => toggleSection('children')}>
                 <span className="flex items-center gap-1">ילדים ({getChildren().length}) {openSections.children ? '▼' : '◀'}</span>
@@ -761,7 +799,6 @@ function FamilyTreeApp() {
               )}
             </div>
 
-            {/* סקשן אחים - אקורדיון חדש */}
             <div className="bg-orange-50 p-3 rounded-lg border border-orange-100">
               <h3 className="text-xs text-orange-800 font-bold mb-1 uppercase flex justify-between items-center cursor-pointer select-none" onClick={() => toggleSection('siblings')}>
                 <span className="flex items-center gap-1">אחים ואחיות ({getSiblings().length}) {openSections.siblings ? '▼' : '◀'}</span>
