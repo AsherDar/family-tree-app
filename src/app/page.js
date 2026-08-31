@@ -130,6 +130,43 @@ const getLayoutedElements = (nodes, edges) => {
   return { nodes, edges };
 };
 
+// פונקציה לכיווץ התמונה בצד הלקוח לפני ההעלאה
+const resizeImage = (file, maxWidth = 400, maxHeight = 400) => {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target.result;
+      img.onload = () => {
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > maxWidth) {
+            height *= maxWidth / width;
+            width = maxWidth;
+          }
+        } else {
+          if (height > maxHeight) {
+            width *= maxHeight / height;
+            height = maxHeight;
+          }
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        
+        // המרה ל-Blob באיכות 80% כדי לחסוך מקום
+        canvas.toBlob((blob) => resolve(blob), 'image/jpeg', 0.8);
+      };
+    };
+  });
+};
+
 function FamilyTreeApp() {
   const [allMembers, setAllMembers] = useState([]);
   const [nodes, setNodes] = useState([]);
@@ -151,11 +188,11 @@ function FamilyTreeApp() {
   const [formData, setFormData] = useState({});
   const [modalTab, setModalTab] = useState('new'); 
   const [selectedExistingId, setSelectedExistingId] = useState('');
+  const [selectedImageFile, setSelectedImageFile] = useState(null); // משתנה לתמונה החדשה
   
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
 
-  // משתני מצב להתחברות
   const [isLoginOpen, setIsLoginOpen] = useState(false);
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
@@ -163,7 +200,6 @@ function FamilyTreeApp() {
 
   const { setCenter, fitView } = useReactFlow(); 
 
-  // בדיקת מצב התחברות בטעינת העמוד
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setCurrentUser(session?.user ?? null);
@@ -181,7 +217,7 @@ function FamilyTreeApp() {
   const handleLogin = async (e) => {
     e.preventDefault();
     setAuthError('');
-    const { data, error } = await supabase.auth.signInWithPassword({
+    const { error } = await supabase.auth.signInWithPassword({
       email: authEmail,
       password: authPassword,
     });
@@ -281,6 +317,7 @@ function FamilyTreeApp() {
     setModalConfig({ type, title });
     setModalTab('new');
     setSelectedExistingId('');
+    setSelectedImageFile(null); // איפוס התמונה בחלון חדש
     
     if (existingData) {
       setFormData(existingData);
@@ -319,6 +356,27 @@ function FamilyTreeApp() {
       }
 
       const dataToSave = { ...formData };
+      
+      // טיפול בהעלאת התמונה (אם נבחר קובץ)
+      if (selectedImageFile) {
+        // כיווץ התמונה
+        const compressedImage = await resizeImage(selectedImageFile);
+        
+        // יצירת שם ייחודי לקובץ
+        const fileExt = 'jpg';
+        const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
+        
+        // העלאה ל-Supabase Storage
+        const { error: uploadError } = await supabase.storage
+          .from('avatars')
+          .upload(fileName, compressedImage, { contentType: 'image/jpeg' });
+          
+        if (uploadError) throw uploadError;
+        
+        // קבלת הקישור הציבורי
+        const { data: publicUrlData } = supabase.storage.from('avatars').getPublicUrl(fileName);
+        dataToSave.photo_url = publicUrlData.publicUrl;
+      }
       
       if (modalConfig.type === 'edit') {
         const { data: currentRecord, error: checkErr } = await supabase
@@ -476,7 +534,6 @@ function FamilyTreeApp() {
   return (
     <div className="w-screen h-screen bg-gray-50 flex" dir="rtl">
       
-      {/* מודאל התחברות למערכת */}
       {isLoginOpen && (
         <div className="fixed inset-0 bg-black/60 z-[200] flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 relative">
@@ -498,7 +555,6 @@ function FamilyTreeApp() {
         </div>
       )}
 
-      {/* מודאל הוספה / עריכה */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col relative overflow-hidden">
@@ -539,7 +595,14 @@ function FamilyTreeApp() {
                   <div className="flex flex-col"><label className="text-sm font-bold text-gray-600 mb-1">מקום לידה</label><input type="text" value={formData.birth_place || ''} onChange={e => setFormData({...formData, birth_place: e.target.value})} className="border rounded-lg p-2 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-400" /></div>
                   <div className="flex flex-col"><label className="text-sm font-bold text-gray-600 mb-1">עיסוק</label><input type="text" value={formData.occupation || ''} onChange={e => setFormData({...formData, occupation: e.target.value})} className="border rounded-lg p-2 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-400" /></div>
                   <div className="flex flex-col"><label className="text-sm font-bold text-gray-600 mb-1">תאריך פטירה</label><input type="text" value={formData.death_date || ''} onChange={e => setFormData({...formData, death_date: e.target.value})} className="border rounded-lg p-2 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-400" /></div>
-                  <div className="flex flex-col"><label className="text-sm font-bold text-gray-600 mb-1">קישור לתמונה (URL)</label><input type="text" dir="ltr" value={formData.photo_url || ''} onChange={e => setFormData({...formData, photo_url: e.target.value})} className="border rounded-lg p-2 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-400" /></div>
+                  
+                  {/* שורת העלאת התמונה החדשה */}
+                  <div className="flex flex-col">
+                    <label className="text-sm font-bold text-gray-600 mb-1">העלה תמונה מהמחשב</label>
+                    <input type="file" accept="image/*" onChange={e => setSelectedImageFile(e.target.files[0])} className="border rounded-lg p-1.5 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-400 text-sm" />
+                    {formData.photo_url && !selectedImageFile && <span className="text-xs text-gray-500 mt-1">יש תמונה קיימת, תוכל להחליף אותה.</span>}
+                  </div>
+                  
                   <div className="flex flex-col col-span-2"><label className="text-sm font-bold text-gray-600 mb-1">סיפור חיים</label><textarea rows="3" value={formData.life_story || ''} onChange={e => setFormData({...formData, life_story: e.target.value})} className="border rounded-lg p-2 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-400 custom-scrollbar" /></div>
                 </div>
               )}
@@ -552,7 +615,6 @@ function FamilyTreeApp() {
         </div>
       )}
 
-      {/* פאנל פרטי הדמות השמאלי */}
       {selectedMember && (
         <div className="w-80 h-full bg-white shadow-2xl border-l border-gray-200 p-6 flex flex-col z-40 relative overflow-y-auto custom-scrollbar">
           <button onClick={() => setSelectedMember(null)} className="absolute top-4 left-4 text-gray-400 hover:text-red-500 font-bold text-2xl">&times;</button>
@@ -674,7 +736,6 @@ function FamilyTreeApp() {
                 
                 <hr className="border-gray-200" />
                 
-                {/* כפתור התחברות דינמי שמוצג לפי הסטטוס מול השרת */}
                 {currentUser ? (
                   <button onClick={handleLogout} className="px-4 py-2 rounded-lg text-sm font-bold bg-indigo-500 text-white transition-colors hover:bg-indigo-600 flex items-center justify-center gap-2">
                     🚪 התנתק ממצב עריכה
