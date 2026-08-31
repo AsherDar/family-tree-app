@@ -90,16 +90,24 @@ const MemberAvatar = ({ member, data, isMain }) => {
 
 const UnifiedFamilyNode = ({ data }) => {
   const { mainMember, spouses, isFocal } = data;
-  const rightSpouses = spouses.slice(0, Math.ceil(spouses.length / 2));
-  const leftSpouses = spouses.slice(Math.ceil(spouses.length / 2));
+  
+  const allMembers = [mainMember, ...spouses];
+  allMembers.sort((a, b) => {
+    const isAMale = a.gender === 'זכר' || a.gender === 'male';
+    const isBMale = b.gender === 'זכר' || b.gender === 'male';
+    if (isAMale && !isBMale) return 1; 
+    if (!isAMale && isBMale) return -1; 
+    return 0;
+  });
+
   const focalStyle = isFocal ? 'ring-4 ring-yellow-400 shadow-2xl bg-yellow-50' : 'shadow-lg bg-white border-gray-200';
 
   return (
     <div className={`p-3 rounded-2xl border-2 flex flex-row items-center justify-center gap-2 transition-all ${focalStyle}`}>
       <Handle type="target" position={Position.Top} id="top" className="w-3 h-3 bg-gray-500" />
-      {rightSpouses.map(s => <MemberAvatar key={s.id} member={s} data={data} isMain={false} />)}
-      <MemberAvatar member={mainMember} data={data} isMain={true} />
-      {leftSpouses.map(s => <MemberAvatar key={s.id} member={s} data={data} isMain={false} />)}
+      {allMembers.map(m => (
+        <MemberAvatar key={m.id} member={m} data={data} isMain={m.id === mainMember.id} />
+      ))}
       <Handle type="source" position={Position.Bottom} id="bottom" className="w-3 h-3 bg-gray-500" />
     </div>
   );
@@ -176,7 +184,7 @@ function FamilyTreeApp() {
   
   const [editMode, setEditMode] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
-  const [isPanelOpen, setIsPanelOpen] = useState(true); 
+  const [isPanelOpen, setIsPanelOpen] = useState(false); 
   
   const [openSections, setOpenSections] = useState({ parents: true, spouses: true, children: true, siblings: true });
   const toggleSection = (sec) => setOpenSections(prev => ({ ...prev, [sec]: !prev[sec] }));
@@ -189,6 +197,7 @@ function FamilyTreeApp() {
   const [formData, setFormData] = useState({});
   const [modalTab, setModalTab] = useState('new'); 
   const [selectedExistingId, setSelectedExistingId] = useState('');
+  const [existingSearchQuery, setExistingSearchQuery] = useState(''); // שדה חיפוש חדש לחיבור אדם קיים
   const [selectedImageFile, setSelectedImageFile] = useState(null); 
   
   const [searchQuery, setSearchQuery] = useState('');
@@ -321,6 +330,7 @@ function FamilyTreeApp() {
     setModalConfig({ type, title });
     setModalTab('new');
     setSelectedExistingId('');
+    setExistingSearchQuery(''); // איפוס תיבת החיפוש הפנימית
     setSelectedImageFile(null); 
     
     if (existingData) {
@@ -372,7 +382,6 @@ function FamilyTreeApp() {
           }
         }
 
-        // מנגנון חיבור אוטומטי חכם במקרה של בת/בן זוג קיימים
         if (modalConfig.type === 'add_spouse' && addedSpouseId) {
           const isSelectedMale = selectedMember.gender === 'זכר' || selectedMember.gender === 'male';
           const missingParentField = isSelectedMale ? 'mother_id' : 'father_id';
@@ -470,7 +479,6 @@ function FamilyTreeApp() {
           addedSpouseId = insertedId;
         }
 
-        // מנגנון חיבור אוטומטי חכם במקרה של בת/בן זוג חדשים
         if (modalConfig.type === 'add_spouse' && addedSpouseId) {
           const isSelectedMale = selectedMember.gender === 'זכר' || selectedMember.gender === 'male';
           const missingParentField = isSelectedMale ? 'mother_id' : 'father_id';
@@ -615,6 +623,12 @@ function FamilyTreeApp() {
     .filter(m => String(m.id) !== String(selectedMember?.id))
     .sort((a, b) => (a.first_name || '').localeCompare(b.first_name || ''));
 
+  // סינון הדמויות לחיבור אדם קיים (חלון המודאל)
+  const filteredAvailableMembers = availableMembers.filter(m => {
+    const fullName = `${m.first_name} ${m.last_name}`.toLowerCase();
+    return fullName.includes(existingSearchQuery.toLowerCase());
+  });
+
   return (
     <div className="w-screen h-screen bg-gray-50 flex" dir="rtl">
       
@@ -658,17 +672,51 @@ function FamilyTreeApp() {
             )}
             <form onSubmit={handleSaveForm} className="p-6 overflow-y-auto">
               {modalTab === 'existing' && modalConfig.type !== 'edit' ? (
-                <div className="py-8 text-center">
-                  <label className="block text-gray-700 font-bold mb-4">בחר אדם מתוך הרשימה:</label>
-                  <select value={selectedExistingId} onChange={e => setSelectedExistingId(e.target.value)} className="w-full max-w-md border border-gray-300 rounded-lg p-3 bg-white focus:ring-2 focus:ring-blue-400" required={modalTab === 'existing'}>
-                    <option value="">-- בחר דמות מהמערכת --</option>
-                    {availableMembers.map(m => {
-                      const father = allMembers.find(f => f.id === m.father_id);
-                      const mother = allMembers.find(mo => mo.id === m.mother_id);
-                      const parentsStr = [father ? father.first_name : '', mother ? mother.first_name : ''].filter(Boolean).join(' ו');
-                      return <option key={m.id} value={m.id}>{m.first_name} {m.last_name}{parentsStr ? ` (בן/בת של: ${parentsStr})` : ''}</option>;
-                    })}
-                  </select>
+                <div className="py-2">
+                  <label className="block text-gray-700 font-bold mb-4">חפש ובחר אדם מהמערכת:</label>
+                  
+                  {selectedExistingId ? (
+                    <div className="bg-blue-50 border border-blue-200 p-4 rounded-xl flex justify-between items-center mb-4">
+                      <span className="font-bold text-blue-800">
+                        נבחר: {availableMembers.find(m => m.id === selectedExistingId)?.first_name} {availableMembers.find(m => m.id === selectedExistingId)?.last_name}
+                      </span>
+                      <button type="button" onClick={() => setSelectedExistingId('')} className="text-red-500 text-sm font-bold hover:underline">
+                        בטל בחירה
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-2">
+                      <input
+                        type="text"
+                        placeholder="הקלד שם לחיפוש..."
+                        value={existingSearchQuery}
+                        onChange={e => setExistingSearchQuery(e.target.value)}
+                        className="w-full border border-gray-300 rounded-lg p-3 bg-white focus:ring-2 focus:ring-blue-400 text-right mb-2"
+                        dir="rtl"
+                      />
+                      <div className="max-h-60 overflow-y-auto border border-gray-200 rounded-lg custom-scrollbar shadow-inner bg-gray-50">
+                        {filteredAvailableMembers.length > 0 ? (
+                          filteredAvailableMembers.map(m => {
+                            const father = allMembers.find(f => f.id === m.father_id);
+                            const mother = allMembers.find(mo => mo.id === m.mother_id);
+                            const parentsStr = [father ? father.first_name : '', mother ? mother.first_name : ''].filter(Boolean).join(' ו');
+                            return (
+                              <div
+                                key={m.id}
+                                className="p-3 border-b hover:bg-blue-100 cursor-pointer text-right bg-white transition-colors"
+                                onClick={() => { setSelectedExistingId(m.id); setExistingSearchQuery(''); }}
+                              >
+                                <div className="font-bold text-gray-800">{m.first_name} {m.last_name}</div>
+                                {parentsStr && <div className="text-xs text-gray-500 mt-1">בן/בת של: {parentsStr}</div>}
+                              </div>
+                            );
+                          })
+                        ) : (
+                          <div className="p-4 text-center text-gray-500">לא נמצאו דמויות בשם הזה</div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="grid grid-cols-2 gap-4">
@@ -862,7 +910,13 @@ function FamilyTreeApp() {
                         const mother = allMembers.find(m => m.id === result.mother_id);
                         const parentsStr = [father ? father.first_name : '', mother ? mother.first_name : ''].filter(Boolean).join(' ו');
                         return (
-                          <div key={result.id} className="p-3 border-b hover:bg-blue-50 cursor-pointer text-right transition-colors" onClick={() => { handleSelectMember(result, allMembers); setSearchQuery(''); setSearchResults([]); }}>
+                          <div key={result.id} className="p-3 border-b hover:bg-blue-50 cursor-pointer text-right transition-colors" 
+                            onClick={() => { 
+                              handleSelectMember(result, allMembers); 
+                              setSearchQuery(''); 
+                              setSearchResults([]); 
+                              setIsPanelOpen(false); // <--- סגירת התפריט בלחיצה!
+                            }}>
                             <div className="font-bold text-sm text-gray-800">{result.first_name} {result.last_name}</div>
                             {parentsStr && <div className="text-xs text-gray-500 mt-1">בן/בת של: {parentsStr}</div>}
                           </div>
