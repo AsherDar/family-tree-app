@@ -130,7 +130,6 @@ const getLayoutedElements = (nodes, edges) => {
   return { nodes, edges };
 };
 
-// פונקציה לכיווץ התמונה בצד הלקוח לפני ההעלאה
 const resizeImage = (file, maxWidth = 400, maxHeight = 400) => {
   return new Promise((resolve) => {
     const reader = new FileReader();
@@ -160,7 +159,6 @@ const resizeImage = (file, maxWidth = 400, maxHeight = 400) => {
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0, width, height);
         
-        // המרה ל-Blob באיכות 80% כדי לחסוך מקום
         canvas.toBlob((blob) => resolve(blob), 'image/jpeg', 0.8);
       };
     };
@@ -188,7 +186,7 @@ function FamilyTreeApp() {
   const [formData, setFormData] = useState({});
   const [modalTab, setModalTab] = useState('new'); 
   const [selectedExistingId, setSelectedExistingId] = useState('');
-  const [selectedImageFile, setSelectedImageFile] = useState(null); // משתנה לתמונה החדשה
+  const [selectedImageFile, setSelectedImageFile] = useState(null); 
   
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
@@ -317,7 +315,7 @@ function FamilyTreeApp() {
     setModalConfig({ type, title });
     setModalTab('new');
     setSelectedExistingId('');
-    setSelectedImageFile(null); // איפוס התמונה בחלון חדש
+    setSelectedImageFile(null); 
     
     if (existingData) {
       setFormData(existingData);
@@ -357,23 +355,21 @@ function FamilyTreeApp() {
 
       const dataToSave = { ...formData };
       
-      // טיפול בהעלאת התמונה (אם נבחר קובץ)
+      delete dataToSave.father_obj;
+      delete dataToSave.mother_obj;
+      delete dataToSave.last_updated;
+      
       if (selectedImageFile) {
-        // כיווץ התמונה
         const compressedImage = await resizeImage(selectedImageFile);
-        
-        // יצירת שם ייחודי לקובץ
         const fileExt = 'jpg';
         const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
         
-        // העלאה ל-Supabase Storage
         const { error: uploadError } = await supabase.storage
           .from('avatars')
           .upload(fileName, compressedImage, { contentType: 'image/jpeg' });
           
         if (uploadError) throw uploadError;
         
-        // קבלת הקישור הציבורי
         const { data: publicUrlData } = supabase.storage.from('avatars').getPublicUrl(fileName);
         dataToSave.photo_url = publicUrlData.publicUrl;
       }
@@ -394,13 +390,13 @@ function FamilyTreeApp() {
           return;
         }
 
-        const { error } = await supabase.from('family_members').update(dataToSave).eq('id', formData.id);
+        const targetId = dataToSave.id;
+        delete dataToSave.id; 
+
+        const { error } = await supabase.from('family_members').update(dataToSave).eq('id', targetId);
         if (error) throw error;
       } else {
         delete dataToSave.id; 
-        delete dataToSave.father_obj; 
-        delete dataToSave.mother_obj;
-        delete dataToSave.last_updated; 
 
         if (modalConfig.type === 'add_child') {
           const isSelectedMale = selectedMember.gender === 'זכר' || selectedMember.gender === 'male';
@@ -596,11 +592,20 @@ function FamilyTreeApp() {
                   <div className="flex flex-col"><label className="text-sm font-bold text-gray-600 mb-1">עיסוק</label><input type="text" value={formData.occupation || ''} onChange={e => setFormData({...formData, occupation: e.target.value})} className="border rounded-lg p-2 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-400" /></div>
                   <div className="flex flex-col"><label className="text-sm font-bold text-gray-600 mb-1">תאריך פטירה</label><input type="text" value={formData.death_date || ''} onChange={e => setFormData({...formData, death_date: e.target.value})} className="border rounded-lg p-2 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-400" /></div>
                   
-                  {/* שורת העלאת התמונה החדשה */}
-                  <div className="flex flex-col">
-                    <label className="text-sm font-bold text-gray-600 mb-1">העלה תמונה מהמחשב</label>
-                    <input type="file" accept="image/*" onChange={e => setSelectedImageFile(e.target.files[0])} className="border rounded-lg p-1.5 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-400 text-sm" />
-                    {formData.photo_url && !selectedImageFile && <span className="text-xs text-gray-500 mt-1">יש תמונה קיימת, תוכל להחליף אותה.</span>}
+                  <div className="flex flex-col col-span-2">
+                    <label className="text-sm font-bold text-gray-600 mb-1">תמונת פרופיל</label>
+                    <div className="flex items-center gap-4 bg-gray-50 p-3 rounded-lg border">
+                      <input type="file" accept="image/*" onChange={e => setSelectedImageFile(e.target.files[0])} className="text-sm flex-grow" />
+                      {formData.photo_url && (
+                        <button 
+                          type="button" 
+                          onClick={() => { setFormData({ ...formData, photo_url: null }); setSelectedImageFile(null); }} 
+                          className="bg-red-100 text-red-600 font-bold px-3 py-1.5 rounded-lg text-sm hover:bg-red-200 transition-colors"
+                        >
+                          🗑️ הסר תמונה
+                        </button>
+                      )}
+                    </div>
                   </div>
                   
                   <div className="flex flex-col col-span-2"><label className="text-sm font-bold text-gray-600 mb-1">סיפור חיים</label><textarea rows="3" value={formData.life_story || ''} onChange={e => setFormData({...formData, life_story: e.target.value})} className="border rounded-lg p-2 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-400 custom-scrollbar" /></div>
