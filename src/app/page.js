@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from 'react';
-import ReactFlow, { Background, Controls, Panel, applyNodeChanges, applyEdgeChanges, Handle, Position, ReactFlowProvider, useReactFlow } from 'reactflow';
+import ReactFlow, { Background, Controls, Panel, applyNodeChanges, applyEdgeChanges, Handle, Position, ReactFlowProvider, useReactFlow, getNodesBounds, getViewportForBounds } from 'reactflow';
 import dagre from 'dagre';
 import 'reactflow/dist/style.css';
 import { supabase } from './supabase';
+import { toPng } from 'html-to-image';
 
 const getYear = (dateStr) => {
   if (!dateStr) return 9999;
@@ -95,8 +96,8 @@ const UnifiedFamilyNode = ({ data }) => {
   allMembers.sort((a, b) => {
     const isAMale = a.gender === 'זכר' || a.gender === 'male';
     const isBMale = b.gender === 'זכר' || b.gender === 'male';
-    if (isAMale && !isBMale) return -1; // גבר ראשון במערך (יופיע מימין ב-RTL)
-    if (!isAMale && isBMale) return 1;  // אישה אחרונה במערך (תופיע משמאל)
+    if (isAMale && !isBMale) return -1; 
+    if (!isAMale && isBMale) return 1; 
     return 0;
   });
 
@@ -115,10 +116,10 @@ const UnifiedFamilyNode = ({ data }) => {
 
 const nodeTypes = { unifiedFamily: UnifiedFamilyNode };
 
-const getLayoutedElements = (nodes, edges) => {
+const getLayoutedElements = (nodes, edges, nodeSpacing = 80) => {
   const dagreGraph = new dagre.graphlib.Graph();
   dagreGraph.setDefaultEdgeLabel(() => ({}));
-  dagreGraph.setGraph({ rankdir: 'TB', ranksep: 120, nodesep: 80 }); 
+  dagreGraph.setGraph({ rankdir: 'TB', ranksep: 120, nodesep: nodeSpacing }); 
 
   nodes.forEach(node => {
     const avatarsCount = 1 + (node.data.spouses ? node.data.spouses.length : 0);
@@ -182,6 +183,9 @@ function FamilyTreeApp() {
   const [focalMemberId, setFocalMemberId] = useState(null); 
   const [isDraggable, setIsDraggable] = useState(false); 
   
+  const [tempSpacing, setTempSpacing] = useState(80);
+  const [nodeSpacing, setNodeSpacing] = useState(80);
+  
   const [editMode, setEditMode] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
   const [isPanelOpen, setIsPanelOpen] = useState(false); 
@@ -208,7 +212,7 @@ function FamilyTreeApp() {
   const [authPassword, setAuthPassword] = useState('');
   const [authError, setAuthError] = useState('');
 
-  const { setCenter, fitView } = useReactFlow(); 
+  const { setCenter, fitView, getNodes } = useReactFlow(); 
   const searchInputRef = useRef(null);
 
   useEffect(() => {
@@ -522,6 +526,51 @@ function FamilyTreeApp() {
     }
   };
 
+  // פונקציית צילום חכמה - קולטת את כל העץ גם מחוץ למסך
+  const handleDownloadImage = () => {
+    const currentNodes = getNodes();
+    if (currentNodes.length === 0) {
+      alert('אין דמויות בעץ לשמירה.');
+      return;
+    }
+
+    // חישוב הגבולות של כל העץ המלא
+    const nodesBounds = getNodesBounds(currentNodes);
+    
+    // הוספת שוליים לתמונה
+    const padding = 200;
+    const imageWidth = nodesBounds.width + padding * 2;
+    const imageHeight = nodesBounds.height + padding * 2;
+
+    // חישוב הזום והמיקום הדרוש כדי שכל העץ ייכנס בול לתמונה
+    const viewport = getViewportForBounds(nodesBounds, imageWidth, imageHeight, 0.1, 2);
+
+    // בחירת אלמנט העץ הנקי (ללא התפריטים מסביב)
+    const viewportElement = document.querySelector('.react-flow__viewport');
+    if (!viewportElement) return;
+
+    toPng(viewportElement, {
+      backgroundColor: '#f3f4f6',
+      width: imageWidth,
+      height: imageHeight,
+      style: {
+        width: `${imageWidth}px`,
+        height: `${imageHeight}px`,
+        transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`,
+      },
+    })
+    .then((dataUrl) => {
+      const link = document.createElement('a');
+      link.download = 'family-tree.png';
+      link.href = dataUrl;
+      link.click();
+    })
+    .catch((err) => {
+      console.error('Error downloading image', err);
+      alert('אירעה שגיאה בשמירת התמונה. ודא שהתקנת את הספריה (npm install html-to-image).');
+    });
+  };
+
   useEffect(() => {
     if (allMembers.length === 0 || !focalMemberId) {
       setNodes([]);
@@ -551,7 +600,6 @@ function FamilyTreeApp() {
         const groupAll = [member, ...spouses];
         let bestMain = member;
 
-        // מציאת בעל הבליטה (קשר הדם) עבור כל קבוצה שמוצגת בעץ
         if (isGroupFocal) {
             bestMain = groupAll.find(m => String(m.id) === String(focalMemberId)) || member;
         } else if (focalNode) {
@@ -605,7 +653,7 @@ function FamilyTreeApp() {
       drawEdge(member.mother_id);
     });
 
-    const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(rawNodes, rawEdges);
+    const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(rawNodes, rawEdges, nodeSpacing);
     setNodes(layoutedNodes);
     setBaseNodes(layoutedNodes.map(node => ({ ...node, position: { ...node.position } })));
     setEdges(layoutedEdges);
@@ -617,7 +665,7 @@ function FamilyTreeApp() {
       }
     }, 400);
 
-  }, [allMembers, focalMemberId, genUp, genDown, handleSelectMember, setCenter]);
+  }, [allMembers, focalMemberId, genUp, genDown, handleSelectMember, setCenter, nodeSpacing]); 
 
   const onNodesChange = useCallback((changes) => setNodes((nds) => applyNodeChanges(changes, nds)), []);
   const onEdgesChange = useCallback((changes) => setEdges((eds) => applyEdgeChanges(changes, eds)), []);
@@ -902,7 +950,7 @@ function FamilyTreeApp() {
         </div>
       )}
 
-      <div className="flex-grow h-full" dir="ltr">
+      <div className="flex-grow h-full relative" dir="ltr">
         <ReactFlow 
           nodes={nodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} nodeTypes={nodeTypes} nodesDraggable={isDraggable}
         >
@@ -936,7 +984,7 @@ function FamilyTreeApp() {
                               handleSelectMember(result, allMembers); 
                               setSearchQuery(''); 
                               setSearchResults([]); 
-                              setIsPanelOpen(false); // <--- סגירת התפריט בלחיצה!
+                              setIsPanelOpen(false); 
                             }}>
                             <div className="font-bold text-sm text-gray-800">{result.first_name} {result.last_name}</div>
                             {parentsStr && <div className="text-xs text-gray-500 mt-1">בן/בת של: {parentsStr}</div>}
@@ -975,6 +1023,7 @@ function FamilyTreeApp() {
                 <button onClick={resetLayout} disabled={!isDraggable} className={`px-4 py-2 rounded-lg text-sm font-bold text-white transition-colors flex items-center justify-center gap-2 ${!isDraggable ? 'bg-gray-300 cursor-not-allowed' : 'bg-blue-500 hover:bg-blue-600'}`}>
                   🔄 אפס מיקומים
                 </button>
+                
                 <hr className="border-gray-200" />
                 <h3 className="text-xs font-bold text-gray-700 text-right">דורות להצגה מסביב:</h3>
                 <div className="flex justify-between items-center bg-gray-100 p-2 rounded-lg">
@@ -985,6 +1034,28 @@ function FamilyTreeApp() {
                   <span className="text-xs text-gray-700 font-semibold">בנים</span>
                   <input type="number" min="0" max="10" value={genDown} onChange={(e) => setGenDown(Number(e.target.value))} className="w-12 text-center text-sm border border-gray-300 rounded p-1" />
                 </div>
+
+                <hr className="border-gray-200" />
+                <h3 className="text-xs font-bold text-gray-700 text-right">עיצוב ושמירה:</h3>
+                <div className="flex flex-col gap-2 bg-gray-100 p-3 rounded-lg">
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-gray-700 font-semibold">ריווח בין דמויות</span>
+                  </div>
+                  <input 
+                    type="range" 
+                    min="20" max="200" step="10"
+                    value={tempSpacing} 
+                    onChange={(e) => setTempSpacing(Number(e.target.value))}
+                    onMouseUp={() => setNodeSpacing(tempSpacing)}
+                    onTouchEnd={() => setNodeSpacing(tempSpacing)}
+                    className="w-full cursor-pointer"
+                  />
+                </div>
+                
+                <button onClick={handleDownloadImage} className="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 rounded-lg text-sm transition-colors flex items-center justify-center gap-2 mt-1">
+                  📸 שמור עץ מלא כתמונה
+                </button>
+
               </div>
             )}
           </Panel>
