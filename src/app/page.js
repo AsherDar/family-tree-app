@@ -190,7 +190,8 @@ function FamilyTreeApp() {
   const [currentUser, setCurrentUser] = useState(null);
   const [isPanelOpen, setIsPanelOpen] = useState(false); 
   
-  const [openSections, setOpenSections] = useState({ parents: true, spouses: true, children: true, siblings: true });
+  // הוספנו את 'details' לאקורדיון, דלוק כברירת מחדל
+  const [openSections, setOpenSections] = useState({ parents: true, spouses: true, children: true, siblings: true, details: true });
   const toggleSection = (sec) => setOpenSections(prev => ({ ...prev, [sec]: !prev[sec] }));
   
   const [genUp, setGenUp] = useState(1);
@@ -345,7 +346,7 @@ function FamilyTreeApp() {
         first_name: '', 
         last_name: selectedMember ? selectedMember.last_name : '',
         gender: type === 'add_father' ? 'זכר' : (type === 'add_mother' ? 'נקבה' : 'זכר'),
-        birth_date: '', birth_place: '', origin_country: '', occupation: '',
+        birth_date: '', birth_place: '', occupation: '', // ללא ארץ מוצא
         death_date: '', death_place: '', life_story: '', photo_url: ''
       });
     }
@@ -789,7 +790,6 @@ function FamilyTreeApp() {
                   <div className="flex flex-col"><label className="text-sm font-bold text-gray-600 mb-1">עיסוק</label><input type="text" value={formData.occupation || ''} onChange={e => setFormData({...formData, occupation: e.target.value})} className="border rounded-lg p-2 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-400" /></div>
                   <div className="flex flex-col"><label className="text-sm font-bold text-gray-600 mb-1">תאריך לידה</label><input type="text" placeholder="למשל: 1980" value={formData.birth_date || ''} onChange={e => setFormData({...formData, birth_date: e.target.value})} className="border rounded-lg p-2 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-400" /></div>
                   <div className="flex flex-col"><label className="text-sm font-bold text-gray-600 mb-1">מקום לידה</label><input type="text" value={formData.birth_place || ''} onChange={e => setFormData({...formData, birth_place: e.target.value})} className="border rounded-lg p-2 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-400" /></div>
-                  <div className="flex flex-col"><label className="text-sm font-bold text-gray-600 mb-1">ארץ מוצא</label><input type="text" value={formData.origin_country || ''} onChange={e => setFormData({...formData, origin_country: e.target.value})} className="border rounded-lg p-2 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-400" /></div>
                   <div className="flex flex-col"><label className="text-sm font-bold text-gray-600 mb-1">תאריך פטירה</label><input type="text" value={formData.death_date || ''} onChange={e => setFormData({...formData, death_date: e.target.value})} className="border rounded-lg p-2 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-400" /></div>
                   <div className="flex flex-col"><label className="text-sm font-bold text-gray-600 mb-1">מקום פטירה</label><input type="text" value={formData.death_place || ''} onChange={e => setFormData({...formData, death_place: e.target.value})} className="border rounded-lg p-2 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-400" /></div>
                   
@@ -931,17 +931,31 @@ function FamilyTreeApp() {
               )}
             </div>
 
-            <hr className="border-gray-200" />
-            <div><h3 className="text-sm text-gray-500 font-semibold">מקום לידה</h3><p className="text-gray-800">{selectedMember.birth_place || 'לא הוזן'}</p></div>
-            <div><h3 className="text-sm text-gray-500 font-semibold">ארץ מוצא</h3><p className="text-gray-800">{selectedMember.origin_country || 'לא הוזן'}</p></div>
-            <div><h3 className="text-sm text-gray-500 font-semibold">עיסוק</h3><p className="text-gray-800">{selectedMember.occupation || 'לא הוזן'}</p></div>
-            {selectedMember.death_date && (
-              <>
-                <div><h3 className="text-sm text-gray-500 font-semibold">תאריך פטירה</h3><p className="text-gray-800">{selectedMember.death_date}</p></div>
-                <div><h3 className="text-sm text-gray-500 font-semibold">מקום פטירה</h3><p className="text-gray-800">{selectedMember.death_place || 'לא הוזן'}</p></div>
-              </>
-            )}
-            <div><h3 className="text-sm text-gray-500 font-semibold">סיפור חיים</h3><p className="text-gray-800 whitespace-pre-wrap">{selectedMember.life_story || 'לא הוזן'}</p></div>
+            <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
+              <h3 className="text-xs text-slate-800 font-bold mb-1 uppercase flex justify-between items-center cursor-pointer select-none" onClick={() => toggleSection('details')}>
+                <span className="flex items-center gap-1">פרטים אישיים {openSections.details ? '▼' : '◀'}</span>
+              </h3>
+              {openSections.details && (
+                <div className="flex flex-col gap-3 mt-3 bg-white p-3 rounded border border-slate-100 shadow-sm">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div><h3 className="text-xs text-slate-500 font-semibold mb-0.5">תאריך לידה</h3><p className="text-sm text-slate-800 font-medium">{selectedMember.birth_date || 'לא הוזן'}</p></div>
+                    <div><h3 className="text-xs text-slate-500 font-semibold mb-0.5">מקום לידה</h3><p className="text-sm text-slate-800 font-medium">{selectedMember.birth_place || 'לא הוזן'}</p></div>
+                    <div className="col-span-2"><h3 className="text-xs text-slate-500 font-semibold mb-0.5">עיסוק</h3><p className="text-sm text-slate-800 font-medium">{selectedMember.occupation || 'לא הוזן'}</p></div>
+                    {selectedMember.death_date && (
+                      <>
+                        <div><h3 className="text-xs text-slate-500 font-semibold mb-0.5">תאריך פטירה</h3><p className="text-sm text-slate-800 font-medium">{selectedMember.death_date}</p></div>
+                        <div><h3 className="text-xs text-slate-500 font-semibold mb-0.5">מקום פטירה</h3><p className="text-sm text-slate-800 font-medium">{selectedMember.death_place || 'לא הוזן'}</p></div>
+                      </>
+                    )}
+                  </div>
+                  <div className="mt-1 pt-3 border-t border-slate-100">
+                    <h3 className="text-xs text-slate-500 font-semibold mb-1">סיפור חיים</h3>
+                    <p className="text-sm text-slate-800 whitespace-pre-wrap">{selectedMember.life_story || 'לא הוזן'}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+
           </div>
         </div>
       )}
