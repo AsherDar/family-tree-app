@@ -214,6 +214,7 @@ function FamilyTreeApp() {
 
   const { setCenter, fitView, getNodes } = useReactFlow(); 
   const searchInputRef = useRef(null);
+  const reactFlowWrapper = useRef(null);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -526,7 +527,6 @@ function FamilyTreeApp() {
     }
   };
 
-  // פונקציית צילום חכמה - קולטת את כל העץ גם מחוץ למסך
   const handleDownloadImage = () => {
     const currentNodes = getNodes();
     if (currentNodes.length === 0) {
@@ -534,18 +534,12 @@ function FamilyTreeApp() {
       return;
     }
 
-    // חישוב הגבולות של כל העץ המלא
     const nodesBounds = getNodesBounds(currentNodes);
-    
-    // הוספת שוליים לתמונה
     const padding = 200;
     const imageWidth = nodesBounds.width + padding * 2;
     const imageHeight = nodesBounds.height + padding * 2;
 
-    // חישוב הזום והמיקום הדרוש כדי שכל העץ ייכנס בול לתמונה
     const viewport = getViewportForBounds(nodesBounds, imageWidth, imageHeight, 0.1, 2);
-
-    // בחירת אלמנט העץ הנקי (ללא התפריטים מסביב)
     const viewportElement = document.querySelector('.react-flow__viewport');
     if (!viewportElement) return;
 
@@ -792,10 +786,12 @@ function FamilyTreeApp() {
                   <div className="flex flex-col"><label className="text-sm font-bold text-gray-600 mb-1">שם פרטי *</label><input required type="text" value={formData.first_name || ''} onChange={e => setFormData({...formData, first_name: e.target.value})} className="border rounded-lg p-2 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-400" /></div>
                   <div className="flex flex-col"><label className="text-sm font-bold text-gray-600 mb-1">שם משפחה *</label><input required type="text" value={formData.last_name || ''} onChange={e => setFormData({...formData, last_name: e.target.value})} className="border rounded-lg p-2 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-400" /></div>
                   <div className="flex flex-col"><label className="text-sm font-bold text-gray-600 mb-1">מגדר</label><select value={formData.gender || 'זכר'} onChange={e => setFormData({...formData, gender: e.target.value})} className="border rounded-lg p-2 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-400"><option value="זכר">זכר</option><option value="נקבה">נקבה</option></select></div>
+                  <div className="flex flex-col"><label className="text-sm font-bold text-gray-600 mb-1">עיסוק</label><input type="text" value={formData.occupation || ''} onChange={e => setFormData({...formData, occupation: e.target.value})} className="border rounded-lg p-2 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-400" /></div>
                   <div className="flex flex-col"><label className="text-sm font-bold text-gray-600 mb-1">תאריך לידה</label><input type="text" placeholder="למשל: 1980" value={formData.birth_date || ''} onChange={e => setFormData({...formData, birth_date: e.target.value})} className="border rounded-lg p-2 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-400" /></div>
                   <div className="flex flex-col"><label className="text-sm font-bold text-gray-600 mb-1">מקום לידה</label><input type="text" value={formData.birth_place || ''} onChange={e => setFormData({...formData, birth_place: e.target.value})} className="border rounded-lg p-2 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-400" /></div>
-                  <div className="flex flex-col"><label className="text-sm font-bold text-gray-600 mb-1">עיסוק</label><input type="text" value={formData.occupation || ''} onChange={e => setFormData({...formData, occupation: e.target.value})} className="border rounded-lg p-2 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-400" /></div>
+                  <div className="flex flex-col"><label className="text-sm font-bold text-gray-600 mb-1">ארץ מוצא</label><input type="text" value={formData.origin_country || ''} onChange={e => setFormData({...formData, origin_country: e.target.value})} className="border rounded-lg p-2 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-400" /></div>
                   <div className="flex flex-col"><label className="text-sm font-bold text-gray-600 mb-1">תאריך פטירה</label><input type="text" value={formData.death_date || ''} onChange={e => setFormData({...formData, death_date: e.target.value})} className="border rounded-lg p-2 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-400" /></div>
+                  <div className="flex flex-col"><label className="text-sm font-bold text-gray-600 mb-1">מקום פטירה</label><input type="text" value={formData.death_place || ''} onChange={e => setFormData({...formData, death_place: e.target.value})} className="border rounded-lg p-2 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-400" /></div>
                   
                   <div className="flex flex-col col-span-2 bg-gray-50 p-4 rounded-xl border border-gray-200">
                     <label className="text-sm font-bold text-gray-700 mb-2">תמונת פרופיל</label>
@@ -950,7 +946,7 @@ function FamilyTreeApp() {
         </div>
       )}
 
-      <div className="flex-grow h-full relative" dir="ltr">
+      <div className="flex-grow h-full relative" dir="ltr" ref={reactFlowWrapper}>
         <ReactFlow 
           nodes={nodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} nodeTypes={nodeTypes} nodesDraggable={isDraggable}
         >
