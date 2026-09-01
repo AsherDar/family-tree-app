@@ -95,15 +95,15 @@ const UnifiedFamilyNode = ({ data }) => {
   allMembers.sort((a, b) => {
     const isAMale = a.gender === 'זכר' || a.gender === 'male';
     const isBMale = b.gender === 'זכר' || b.gender === 'male';
-    if (isAMale && !isBMale) return 1; 
-    if (!isAMale && isBMale) return -1; 
+    if (isAMale && !isBMale) return -1; // גבר ראשון במערך (יופיע מימין ב-RTL)
+    if (!isAMale && isBMale) return 1;  // אישה אחרונה במערך (תופיע משמאל)
     return 0;
   });
 
   const focalStyle = isFocal ? 'ring-4 ring-yellow-400 shadow-2xl bg-yellow-50' : 'shadow-lg bg-white border-gray-200';
 
   return (
-    <div className={`p-3 rounded-2xl border-2 flex flex-row items-center justify-center gap-2 transition-all ${focalStyle}`}>
+    <div className={`p-3 rounded-2xl border-2 flex flex-row items-center justify-center gap-2 transition-all ${focalStyle}`} dir="rtl">
       <Handle type="target" position={Position.Top} id="top" className="w-3 h-3 bg-gray-500" />
       {allMembers.map(m => (
         <MemberAvatar key={m.id} member={m} data={data} isMain={m.id === mainMember.id} />
@@ -197,7 +197,7 @@ function FamilyTreeApp() {
   const [formData, setFormData] = useState({});
   const [modalTab, setModalTab] = useState('new'); 
   const [selectedExistingId, setSelectedExistingId] = useState('');
-  const [existingSearchQuery, setExistingSearchQuery] = useState(''); // שדה חיפוש חדש לחיבור אדם קיים
+  const [existingSearchQuery, setExistingSearchQuery] = useState(''); 
   const [selectedImageFile, setSelectedImageFile] = useState(null); 
   
   const [searchQuery, setSearchQuery] = useState('');
@@ -330,7 +330,7 @@ function FamilyTreeApp() {
     setModalConfig({ type, title });
     setModalTab('new');
     setSelectedExistingId('');
-    setExistingSearchQuery(''); // איפוס תיבת החיפוש הפנימית
+    setExistingSearchQuery(''); 
     setSelectedImageFile(null); 
     
     if (existingData) {
@@ -546,13 +546,35 @@ function FamilyTreeApp() {
         spouses.forEach(s => { memberToGroupMap[s.id] = groupId; processedIds.add(String(s.id)); });
 
         const isGroupFocal = (mId === String(focalMemberId)) || spouses.some(s => String(s.id) === String(focalMemberId));
-        let mainMember = member;
-        let groupSpouses = spouses;
+        const focalNode = visibleMembers.find(v => String(v.id) === String(focalMemberId));
+        
+        const groupAll = [member, ...spouses];
+        let bestMain = member;
 
-        if (spouses.some(s => String(s.id) === String(focalMemberId))) {
-          mainMember = spouses.find(s => String(s.id) === String(focalMemberId));
-          groupSpouses = [member, ...spouses.filter(s => String(s.id) !== String(focalMemberId))];
+        // מציאת בעל הבליטה (קשר הדם) עבור כל קבוצה שמוצגת בעץ
+        if (isGroupFocal) {
+            bestMain = groupAll.find(m => String(m.id) === String(focalMemberId)) || member;
+        } else if (focalNode) {
+            const parent = groupAll.find(m => String(focalNode.father_id) === String(m.id) || String(focalNode.mother_id) === String(m.id));
+            const child = groupAll.find(m => String(m.father_id) === String(focalNode.id) || String(m.mother_id) === String(focalNode.id));
+            const sibling = groupAll.find(m => 
+                (m.father_id && focalNode.father_id && String(m.father_id) === String(focalNode.father_id)) || 
+                (m.mother_id && focalNode.mother_id && String(m.mother_id) === String(focalNode.mother_id))
+            );
+            
+            if (parent) bestMain = parent;
+            else if (child) bestMain = child;
+            else if (sibling) bestMain = sibling;
+            else {
+                const connected = groupAll.find(m => 
+                    visibleMembers.some(v => String(v.id) === String(m.father_id) || String(v.id) === String(m.mother_id) || String(v.father_id) === String(m.id) || String(v.mother_id) === String(m.id))
+                );
+                if (connected) bestMain = connected;
+            }
         }
+
+        let mainMember = bestMain;
+        let groupSpouses = groupAll.filter(m => String(m.id) !== String(bestMain.id));
 
         groupedNodesData.push({ id: groupId, mainMember: mainMember, spouses: groupSpouses, isFocal: isGroupFocal });
       }
@@ -623,7 +645,6 @@ function FamilyTreeApp() {
     .filter(m => String(m.id) !== String(selectedMember?.id))
     .sort((a, b) => (a.first_name || '').localeCompare(b.first_name || ''));
 
-  // סינון הדמויות לחיבור אדם קיים (חלון המודאל)
   const filteredAvailableMembers = availableMembers.filter(m => {
     const fullName = `${m.first_name} ${m.last_name}`.toLowerCase();
     return fullName.includes(existingSearchQuery.toLowerCase());
