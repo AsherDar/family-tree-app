@@ -260,7 +260,6 @@ function FamilyTreeApp() {
     setAllMembers(sortedData);
     
     setFocalMemberId((prevFocalId) => {
-      // קריאה מהזיכרון המקומי!
       const targetId = prevFocalId || localStorage.getItem('savedFocalMember');
       if (targetId) {
         const updatedFocal = sortedData.find(m => String(m.id) === String(targetId));
@@ -298,7 +297,6 @@ function FamilyTreeApp() {
     setSelectedMember({ ...rawMember, father_obj: father, mother_obj: mother });
     setFocalMemberId(String(rawMember.id));
     
-    // שמירה לזיכרון המקומי בכל פעם שבוחרים דמות
     localStorage.setItem('savedFocalMember', String(rawMember.id));
   }, [allMembers]);
 
@@ -527,7 +525,7 @@ function FamilyTreeApp() {
       } else {
         setSelectedMember(null);
         setFocalMemberId(null);
-        localStorage.removeItem('savedFocalMember'); // מחיקה מהזיכרון במקרה של מחיקת הדמות
+        localStorage.removeItem('savedFocalMember'); 
         fetchFamily(); 
       }
     }
@@ -801,19 +799,32 @@ function FamilyTreeApp() {
                   <div className="flex flex-col col-span-2 bg-gray-50 p-4 rounded-xl border border-gray-200">
                     <label className="text-sm font-bold text-gray-700 mb-2">תמונת פרופיל</label>
                     <div className="flex items-center justify-between gap-4">
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-4">
                         {formData.photo_url ? (
-                          <img src={formData.photo_url} alt="תמונה קיימת" className="w-12 h-12 rounded-full object-cover border-2 border-blue-400 shadow-sm" />
+                          <img src={formData.photo_url} alt="תמונה קיימת" className="w-14 h-14 rounded-full object-cover border-2 border-blue-400 shadow-sm" />
                         ) : (
-                          <div className="w-12 h-12 rounded-full bg-gray-200 flex items-center justify-center text-xs text-gray-500 font-bold">אין תמונה</div>
+                          <div className="w-14 h-14 rounded-full bg-gray-200 flex items-center justify-center text-xs text-gray-500 font-bold">אין תמונה</div>
                         )}
-                        <input type="file" accept="image/*" onChange={e => setSelectedImageFile(e.target.files[0])} className="text-sm text-gray-600" />
+                        
+                        <div className="flex flex-col gap-1">
+                          <label className="cursor-pointer bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 px-4 py-2 rounded-lg text-sm font-bold transition-colors shadow-sm text-center">
+                            {formData.photo_url ? '🔄 החלף תמונה' : '📁 בחר תמונה'}
+                            <input 
+                              type="file" 
+                              accept="image/*" 
+                              onChange={e => setSelectedImageFile(e.target.files[0])} 
+                              className="hidden" 
+                            />
+                          </label>
+                          {selectedImageFile && <span className="text-xs text-green-600 font-bold mt-1 text-center">נבחר קובץ חדש</span>}
+                        </div>
                       </div>
+                      
                       {formData.photo_url && (
                         <button 
                           type="button" 
-                          onClick={() => setFormData({ ...formData, photo_url: null })} 
-                          className="bg-red-500 text-white font-bold px-4 py-2 rounded-lg text-xs hover:bg-red-600 transition-colors shadow-sm"
+                          onClick={() => { setFormData({ ...formData, photo_url: null }); setSelectedImageFile(null); }} 
+                          className="bg-red-50 hover:bg-red-100 text-red-600 font-bold px-4 py-2 rounded-lg text-xs transition-colors border border-red-200"
                         >
                           🗑️ הסר תמונה
                         </button>
@@ -835,7 +846,6 @@ function FamilyTreeApp() {
 
       {selectedMember && (
         <div className="w-80 h-full bg-white shadow-2xl border-l border-gray-200 p-6 flex flex-col z-40 relative overflow-y-auto custom-scrollbar">
-          {/* ה-X מעכשיו רק סוגר את הפאנל ולא מוחק את העץ */}
           <button onClick={() => setSelectedMember(null)} className="absolute top-4 left-4 text-gray-400 hover:text-red-500 font-bold text-2xl">&times;</button>
           
           <div className="text-center mt-8 mb-6">
@@ -978,7 +988,6 @@ function FamilyTreeApp() {
             {isPanelOpen && (
               <div className="bg-white/95 p-4 rounded-xl shadow-lg border border-gray-200 flex flex-col gap-3 w-64">
                 
-                {/* כפתור הניקוי והחזרה להתחלה */}
                 <button 
                   onClick={() => {
                     setFocalMemberId(null);
