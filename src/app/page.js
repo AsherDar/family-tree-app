@@ -190,7 +190,6 @@ function FamilyTreeApp() {
   const [currentUser, setCurrentUser] = useState(null);
   const [isPanelOpen, setIsPanelOpen] = useState(false); 
   
-  // הוספנו את 'details' לאקורדיון, דלוק כברירת מחדל
   const [openSections, setOpenSections] = useState({ parents: true, spouses: true, children: true, siblings: true, details: true });
   const toggleSection = (sec) => setOpenSections(prev => ({ ...prev, [sec]: !prev[sec] }));
   
@@ -261,13 +260,15 @@ function FamilyTreeApp() {
     setAllMembers(sortedData);
     
     setFocalMemberId((prevFocalId) => {
-      if (prevFocalId) {
-        const updatedFocal = sortedData.find(m => String(m.id) === String(prevFocalId));
+      // קריאה מהזיכרון המקומי!
+      const targetId = prevFocalId || localStorage.getItem('savedFocalMember');
+      if (targetId) {
+        const updatedFocal = sortedData.find(m => String(m.id) === String(targetId));
         if (updatedFocal) {
           const father = sortedData.find(m => m.id === updatedFocal.father_id);
           const mother = sortedData.find(m => m.id === updatedFocal.mother_id);
           setSelectedMember({ ...updatedFocal, father_obj: father, mother_obj: mother });
-          return prevFocalId;
+          return targetId;
         }
       }
       return null; 
@@ -296,6 +297,9 @@ function FamilyTreeApp() {
     const mother = dataList.find(m => m.id === rawMember.mother_id);
     setSelectedMember({ ...rawMember, father_obj: father, mother_obj: mother });
     setFocalMemberId(String(rawMember.id));
+    
+    // שמירה לזיכרון המקומי בכל פעם שבוחרים דמות
+    localStorage.setItem('savedFocalMember', String(rawMember.id));
   }, [allMembers]);
 
   const handleUnlink = async (type, relativeId) => {
@@ -346,7 +350,7 @@ function FamilyTreeApp() {
         first_name: '', 
         last_name: selectedMember ? selectedMember.last_name : '',
         gender: type === 'add_father' ? 'זכר' : (type === 'add_mother' ? 'נקבה' : 'זכר'),
-        birth_date: '', birth_place: '', occupation: '', // ללא ארץ מוצא
+        birth_date: '', birth_place: '', occupation: '',
         death_date: '', death_place: '', life_story: '', photo_url: ''
       });
     }
@@ -523,6 +527,7 @@ function FamilyTreeApp() {
       } else {
         setSelectedMember(null);
         setFocalMemberId(null);
+        localStorage.removeItem('savedFocalMember'); // מחיקה מהזיכרון במקרה של מחיקת הדמות
         fetchFamily(); 
       }
     }
@@ -830,7 +835,8 @@ function FamilyTreeApp() {
 
       {selectedMember && (
         <div className="w-80 h-full bg-white shadow-2xl border-l border-gray-200 p-6 flex flex-col z-40 relative overflow-y-auto custom-scrollbar">
-          <button onClick={() => { setSelectedMember(null); setFocalMemberId(null); }} className="absolute top-4 left-4 text-gray-400 hover:text-red-500 font-bold text-2xl">&times;</button>
+          {/* ה-X מעכשיו רק סוגר את הפאנל ולא מוחק את העץ */}
+          <button onClick={() => setSelectedMember(null)} className="absolute top-4 left-4 text-gray-400 hover:text-red-500 font-bold text-2xl">&times;</button>
           
           <div className="text-center mt-8 mb-6">
             <h2 className="text-2xl font-bold text-gray-800">{selectedMember.first_name} {selectedMember.last_name}</h2>
@@ -972,6 +978,20 @@ function FamilyTreeApp() {
             {isPanelOpen && (
               <div className="bg-white/95 p-4 rounded-xl shadow-lg border border-gray-200 flex flex-col gap-3 w-64">
                 
+                {/* כפתור הניקוי והחזרה להתחלה */}
+                <button 
+                  onClick={() => {
+                    setFocalMemberId(null);
+                    setSelectedMember(null);
+                    localStorage.removeItem('savedFocalMember');
+                    setIsPanelOpen(false);
+                    setSearchQuery('');
+                  }} 
+                  className="w-full bg-red-50 hover:bg-red-100 text-red-600 font-bold py-2 rounded-lg text-sm transition-colors flex items-center justify-center gap-2 mb-2 border border-red-200"
+                >
+                  🏠 נקה עץ וחזור למסך הראשי
+                </button>
+
                 <div className="relative mb-2">
                   <input 
                     ref={searchInputRef}
