@@ -82,7 +82,8 @@ const MemberAvatar = ({ member, data, isMain }) => {
       }}
     >
       <img src={member.photo_url || defaultImg} alt={`${member.first_name}`} className={`w-14 h-14 rounded-full object-cover ring-2 ${ringColor}`} />
-      <div className="mt-2 text-xs font-bold text-gray-800 text-center w-16 leading-tight">
+      {/* כאן התיקון: w-20 ימנע גלישות מיותרות, ו-h-9 יבטיח גובה קבוע בדיוק של שתי שורות לכל הקוביות! */}
+      <div className="mt-2 text-xs font-bold text-gray-800 text-center w-20 h-9 leading-tight">
         {member.first_name} {member.last_name}
       </div>
     </div>
@@ -124,7 +125,8 @@ const getLayoutedElements = (nodes, edges, nodeSpacing = 80) => {
   nodes.forEach(node => {
     const avatarsCount = 1 + (node.data.spouses ? node.data.spouses.length : 0);
     const boxWidth = avatarsCount * 90 + 30; 
-    dagreGraph.setNode(node.id, { width: boxWidth, height: 120 });
+    // הגובה במנוע מתעדכן ל-125 פיקסלים כדי להכיל בשלמות את קופסת הטקסט הקבועה החדשה
+    dagreGraph.setNode(node.id, { width: boxWidth, height: 125 });
   });
 
   edges.forEach(edge => dagreGraph.setEdge(edge.source, edge.target));
