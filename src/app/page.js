@@ -82,7 +82,6 @@ const MemberAvatar = ({ member, data, isMain }) => {
       }}
     >
       <img src={member.photo_url || defaultImg} alt={`${member.first_name}`} className={`w-14 h-14 rounded-full object-cover ring-2 ${ringColor}`} />
-      {/* כאן התיקון: w-20 ימנע גלישות מיותרות, ו-h-9 יבטיח גובה קבוע בדיוק של שתי שורות לכל הקוביות! */}
       <div className="mt-2 text-xs font-bold text-gray-800 text-center w-20 h-9 leading-tight">
         {member.first_name} {member.last_name}
       </div>
@@ -125,7 +124,6 @@ const getLayoutedElements = (nodes, edges, nodeSpacing = 80) => {
   nodes.forEach(node => {
     const avatarsCount = 1 + (node.data.spouses ? node.data.spouses.length : 0);
     const boxWidth = avatarsCount * 90 + 30; 
-    // הגובה במנוע מתעדכן ל-125 פיקסלים כדי להכיל בשלמות את קופסת הטקסט הקבועה החדשה
     dagreGraph.setNode(node.id, { width: boxWidth, height: 125 });
   });
 
@@ -188,10 +186,20 @@ function FamilyTreeApp() {
   const [tempSpacing, setTempSpacing] = useState(80);
   const [nodeSpacing, setNodeSpacing] = useState(80);
   
-  const [editMode, setEditMode] = useState(false);
+  // ----- מערכת הרשאות חדשה -----
   const [currentUser, setCurrentUser] = useState(null);
-  const [isPanelOpen, setIsPanelOpen] = useState(false); 
+  const [userRole, setUserRole] = useState(null); // 'admin' | 'contributor' | null
   
+  // *** הכנס כאן את המייל שלך כמנהל הראשי ***
+  const ADMIN_EMAILS = ['edit@darshan-family.com']; 
+
+  const checkUserRole = (user) => {
+    if (!user) return null;
+    return ADMIN_EMAILS.includes(user.email) ? 'admin' : 'contributor';
+  };
+  // -----------------------------
+
+  const [isPanelOpen, setIsPanelOpen] = useState(false); 
   const [openSections, setOpenSections] = useState({ parents: true, spouses: true, children: true, siblings: true, details: true });
   const toggleSection = (sec) => setOpenSections(prev => ({ ...prev, [sec]: !prev[sec] }));
   
@@ -221,12 +229,12 @@ function FamilyTreeApp() {
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setCurrentUser(session?.user ?? null);
-      setEditMode(!!session?.user);
+      setUserRole(checkUserRole(session?.user));
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setCurrentUser(session?.user ?? null);
-      setEditMode(!!session?.user);
+      setUserRole(checkUserRole(session?.user));
     });
 
     return () => subscription.unsubscribe();
@@ -303,6 +311,7 @@ function FamilyTreeApp() {
   }, [allMembers]);
 
   const handleUnlink = async (type, relativeId) => {
+    if (userRole !== 'admin') return; // הגנה נוספת
     if (!window.confirm("האם לנתק את הקשר? הדמות תישאר במערכת אך הקו ינותק.")) return;
     
     try {
@@ -516,6 +525,7 @@ function FamilyTreeApp() {
   };
 
   const handleDelete = async () => {
+    if (userRole !== 'admin') return;
     const childrenCount = allMembers.filter(m => m.father_id === selectedMember.id || m.mother_id === selectedMember.id).length;
     const spousesCount = allMembers.filter(m => m.spouse_id === selectedMember.id || selectedMember.spouse_id === m.id).length;
     const confirmMsg = `האם ברצונך למחוק את ${selectedMember.first_name} ${selectedMember.last_name} לחלוטין?\n\nלאדם זה מקושרים:\n- ${childrenCount} ילדים\n- ${spousesCount} בני/בנות זוג\n\nהמחיקה תעלים אותו.`;
@@ -705,7 +715,7 @@ function FamilyTreeApp() {
         <div className="fixed inset-0 bg-black/60 z-[200] flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 relative">
             <button onClick={() => setIsLoginOpen(false)} className="absolute top-4 left-4 text-gray-500 hover:text-red-500 text-2xl font-bold">&times;</button>
-            <h2 className="text-xl font-bold text-gray-800 mb-4 text-center">התחברות למצב עריכה</h2>
+            <h2 className="text-xl font-bold text-gray-800 mb-4 text-center">התחברות למערכת</h2>
             <form onSubmit={handleLogin} className="flex flex-col gap-4">
               {authError && <div className="bg-red-50 text-red-600 p-2 rounded text-sm text-center">{authError}</div>}
               <div>
@@ -855,7 +865,8 @@ function FamilyTreeApp() {
             <p className="text-gray-500 text-sm mt-1">{selectedMember.birth_date ? `נולד/ה ב-${selectedMember.birth_date}` : ''}</p>
           </div>
 
-          {editMode && (
+          {/* מציג כפתורי עריכה ומחיקה רק למנהל הראשי */}
+          {userRole === 'admin' && (
             <div className="mb-6 flex gap-2 justify-center border-b border-gray-100 pb-4">
               <button onClick={() => openModal('edit', 'עריכת פרטים', selectedMember)} className="bg-blue-100 hover:bg-blue-200 text-blue-700 text-sm font-bold py-1 px-3 rounded">✏️ ערוך פרטים</button>
               <button onClick={handleDelete} className="bg-red-100 hover:bg-red-200 text-red-700 text-sm font-bold py-1 px-3 rounded">🗑️ מחק דמות</button>
@@ -867,7 +878,8 @@ function FamilyTreeApp() {
             <div className="bg-blue-50 p-3 rounded-lg border border-blue-100">
               <h3 className="text-xs text-blue-800 font-bold mb-1 uppercase flex justify-between items-center cursor-pointer select-none" onClick={() => toggleSection('parents')}>
                 <span className="flex items-center gap-1">הורים {openSections.parents ? '▼' : '◀'}</span>
-                {editMode && (
+                {/* כפתורי הוספה מוצגים גם למנהל וגם לתורם */}
+                {userRole && (
                   <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
                     {!selectedMember.father_obj && <button onClick={() => openModal('add_father', 'הוספת אב')} className="text-blue-600 hover:text-blue-900 font-black">+ אב</button>}
                     {!selectedMember.mother_obj && <button onClick={() => openModal('add_mother', 'הוספת אם')} className="text-pink-600 hover:text-pink-900 font-black">+ אם</button>}
@@ -879,13 +891,14 @@ function FamilyTreeApp() {
                   {selectedMember.father_obj && (
                     <div className="flex justify-between items-center bg-white p-1.5 rounded border border-blue-200">
                       <button onClick={() => handleSelectMember(selectedMember.father_obj)} className="text-right text-sm text-blue-700 hover:underline">אב: {selectedMember.father_obj.first_name} {selectedMember.father_obj.last_name}</button>
-                      {editMode && <button onClick={() => handleUnlink('father', selectedMember.father_obj.id)} className="text-red-500 text-xs px-2 hover:text-red-700">✖</button>}
+                      {/* מחיקה (ניתוק קשר) - רק למנהל */}
+                      {userRole === 'admin' && <button onClick={() => handleUnlink('father', selectedMember.father_obj.id)} className="text-red-500 text-xs px-2 hover:text-red-700">✖</button>}
                     </div>
                   )}
                   {selectedMember.mother_obj && (
                     <div className="flex justify-between items-center bg-white p-1.5 rounded border border-pink-200">
                       <button onClick={() => handleSelectMember(selectedMember.mother_obj)} className="text-right text-sm text-pink-700 hover:underline">אם: {selectedMember.mother_obj.first_name} {selectedMember.mother_obj.last_name}</button>
-                      {editMode && <button onClick={() => handleUnlink('mother', selectedMember.mother_obj.id)} className="text-red-500 text-xs px-2 hover:text-red-700">✖</button>}
+                      {userRole === 'admin' && <button onClick={() => handleUnlink('mother', selectedMember.mother_obj.id)} className="text-red-500 text-xs px-2 hover:text-red-700">✖</button>}
                     </div>
                   )}
                 </div>
@@ -895,7 +908,7 @@ function FamilyTreeApp() {
             <div className="bg-purple-50 p-3 rounded-lg border border-purple-100">
               <h3 className="text-xs text-purple-800 font-bold mb-1 uppercase flex justify-between items-center cursor-pointer select-none" onClick={() => toggleSection('spouses')}>
                 <span className="flex items-center gap-1">בני/בנות זוג {openSections.spouses ? '▼' : '◀'}</span>
-                {editMode && (
+                {userRole && (
                   <button onClick={(e) => { e.stopPropagation(); openModal('add_spouse', 'הוספת בן/בת זוג'); }} className="text-purple-600 hover:text-purple-900 font-black">+</button>
                 )}
               </h3>
@@ -904,7 +917,7 @@ function FamilyTreeApp() {
                   {getSpouses().map(spouse => (
                     <div key={spouse.id} className="flex justify-between items-center bg-white p-1.5 rounded border border-purple-200">
                       <button onClick={() => handleSelectMember(spouse)} className="text-right text-sm text-purple-700 hover:underline">{spouse.first_name} {spouse.last_name}</button>
-                      {editMode && <button onClick={() => handleUnlink('spouse', spouse.id)} className="text-red-500 text-xs px-2 hover:text-red-700">✖</button>}
+                      {userRole === 'admin' && <button onClick={() => handleUnlink('spouse', spouse.id)} className="text-red-500 text-xs px-2 hover:text-red-700">✖</button>}
                     </div>
                   ))}
                 </div>
@@ -914,7 +927,7 @@ function FamilyTreeApp() {
             <div className="bg-green-50 p-3 rounded-lg border border-green-100">
               <h3 className="text-xs text-green-800 font-bold mb-1 uppercase flex justify-between items-center cursor-pointer select-none" onClick={() => toggleSection('children')}>
                 <span className="flex items-center gap-1">ילדים ({getChildren().length}) {openSections.children ? '▼' : '◀'}</span>
-                {editMode && (
+                {userRole && (
                   <button onClick={(e) => { e.stopPropagation(); openModal('add_child', 'הוספת ילד/ה'); }} className="text-green-600 hover:text-green-900 font-black">+</button>
                 )}
               </h3>
@@ -923,7 +936,7 @@ function FamilyTreeApp() {
                   {getChildren().map(child => (
                     <div key={child.id} className="flex justify-between items-center bg-white p-1.5 rounded border border-green-200">
                       <button onClick={() => handleSelectMember(child)} className="text-right text-sm text-green-700 hover:underline">{child.first_name} {child.last_name}</button>
-                      {editMode && <button onClick={() => handleUnlink('child', child.id)} className="text-red-500 text-xs px-2 hover:text-red-700">✖</button>}
+                      {userRole === 'admin' && <button onClick={() => handleUnlink('child', child.id)} className="text-red-500 text-xs px-2 hover:text-red-700">✖</button>}
                     </div>
                   ))}
                 </div>
@@ -933,7 +946,7 @@ function FamilyTreeApp() {
             <div className="bg-orange-50 p-3 rounded-lg border border-orange-100">
               <h3 className="text-xs text-orange-800 font-bold mb-1 uppercase flex justify-between items-center cursor-pointer select-none" onClick={() => toggleSection('siblings')}>
                 <span className="flex items-center gap-1">אחים ואחיות ({getSiblings().length}) {openSections.siblings ? '▼' : '◀'}</span>
-                {editMode && (selectedMember.father_id || selectedMember.mother_id) && (
+                {userRole && (selectedMember.father_id || selectedMember.mother_id) && (
                   <button onClick={(e) => { e.stopPropagation(); openModal('add_sibling', 'הוספת אח/ות'); }} className="text-orange-600 hover:text-orange-900 font-black">+</button>
                 )}
               </h3>
@@ -942,7 +955,7 @@ function FamilyTreeApp() {
                   {getSiblings().map(sibling => (
                     <div key={sibling.id} className="flex justify-between items-center bg-white p-1.5 rounded border border-orange-200">
                       <button onClick={() => handleSelectMember(sibling)} className="text-right text-sm text-orange-700 hover:underline">{sibling.first_name} {sibling.last_name}</button>
-                      {editMode && <button onClick={() => handleUnlink('sibling', sibling.id)} className="text-red-500 text-xs px-2 hover:text-red-700">✖</button>}
+                      {userRole === 'admin' && <button onClick={() => handleUnlink('sibling', sibling.id)} className="text-red-500 text-xs px-2 hover:text-red-700">✖</button>}
                     </div>
                   ))}
                 </div>
@@ -1039,16 +1052,21 @@ function FamilyTreeApp() {
                 <hr className="border-gray-200" />
                 
                 {currentUser ? (
-                  <button onClick={handleLogout} className="px-4 py-2 rounded-lg text-sm font-bold bg-indigo-500 text-white transition-colors hover:bg-indigo-600 flex items-center justify-center gap-2">
-                    🚪 התנתק ממצב עריכה
-                  </button>
+                  <div className="flex flex-col gap-2">
+                    <div className="text-center text-xs font-bold text-gray-500">
+                      {userRole === 'admin' ? '👑 מחובר כמנהל ראשי' : '✍️ מחובר כתורם (הוספה בלבד)'}
+                    </div>
+                    <button onClick={handleLogout} className="px-4 py-2 rounded-lg text-sm font-bold bg-indigo-500 text-white transition-colors hover:bg-indigo-600 flex items-center justify-center gap-2">
+                      🚪 התנתק
+                    </button>
+                  </div>
                 ) : (
                   <button onClick={() => setIsLoginOpen(true)} className="px-4 py-2 rounded-lg text-sm font-bold bg-gray-200 text-gray-700 transition-colors hover:bg-gray-300 flex items-center justify-center gap-2">
                     🔐 כנס למצב עריכה
                   </button>
                 )}
 
-                {editMode && (
+                {userRole && (
                   <>
                     <hr className="border-gray-200" />
                     <button onClick={() => openModal('add_new', '✨ הוספת דמות חדשה')} className="px-4 py-2 rounded-lg text-sm font-bold bg-green-500 text-white transition-colors hover:bg-green-600 flex items-center justify-center gap-2">
